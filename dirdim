@@ -1,0 +1,64 @@
+#!/usr/bin/perl
+use 5.001 ; use strict ; use warnings ; 
+use Getopt::Std ; getopts '.cv' , \my%o ; 
+use Term::ANSIColor qw [ :constants ] ; $Term::ANSIColor::AUTORESET = 1 ; 
+use File::Spec::Functions qw[catfile] ; 
+use List::Util qw[ minstr maxstr ] ;
+my $fdim = catfile '', '' ; # OS毎に異なる可能性のある、ファイルパスの区切り文字を取得。 
+
+& HELP_MESSAGE unless @ARGV ; 
+my @tmp = ( ("Non-dir files" ) , (CYAN "Dir files" ) , (BRIGHT_CYAN "Given directory") ) ;
+push @tmp , ("fileName_minstr" , (BRIGHT_WHITE "fileName_maxstr" ) ) if $o{v} ; 
+print join "\t" , @tmp ; 
+print "\n--\n" ;
+
+for ( @ARGV ) { 
+  chomp ;
+  do { print "notExists\t$_\n" ; next ; } if ! -e $_  ; 
+  do { print  join "\t" , '', '', $_ , (YELLOW "not a directory.")  ; print "\n" ; next } if ! -d $_  ; 
+  opendir my $dh , $_ or do { warn "$_ does not open.\n" ; next } ;
+  my @files = grep {! /\A\.{1,2}\Z/ } readdir $dh  ; 
+  @files = grep {/\A\./ } @files if $o{'.'} ; 
+  @files = grep {! /\A\./ } @files if $o{c} ; 
+  my $dnum = do { my $t = $_ ; grep { -d "$t$fdim$_" and  $_ = $_.$fdim } @files } ; 
+  my $pnum = (scalar @files) - $dnum ;
+  my @out =   ( ($pnum) , (CYAN $dnum) , (BRIGHT_CYAN $_.$fdim)  ) ; 
+  if ( $o{v} ) { 
+  	my $f1 = minstr @files ;
+  	my $f2 = maxstr @files ; 
+  	push @out , ($f1) if defined $f1 ; 
+  	push @out , (BRIGHT_WHITE $f2) if defined $f1 && $f1 ne $f2 ;
+  }
+  print join "\t", @out ; 
+  print "\n" ; 
+  closedir $dh ; 
+}
+exit 0 ; 
+
+sub VERSION_MESSAGE {}
+sub HELP_MESSAGE {
+  use FindBin qw[ $Script ] ;
+  $ARGV[1] //= '' ;
+  open my $FH , '<' , $0 ;
+  while(<$FH>){
+    s/\$0/$Script/g ;
+    print $_ if $ARGV[1] eq 'opt' ? m/^\ +\-/ : s/^=head1// .. s/^=cut// ;
+  }
+  close $FH ;
+  exit 0 ;
+}
+
+=encoding utf8
+
+=head1
+
+ $0 args..
+
+  引数args で指定されたディレクトリの直下にある、非ディリクトリファイルの数とディレトリの数を出力する。
+
+ オプション: 
+
+  -.  : ファイル名がピリオドで始まるファイル(隠しファイルと言われる)について調べる。
+  -c  : ファイル名がピリオドで始まるファイル(隠しファイルと言われる)は対象外とする。(-.とは正反対の条件)
+  -v  : ファイル名の(文字列としての)最小値と最大値も出力する。(verbose)
+=cut
