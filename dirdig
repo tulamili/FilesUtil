@@ -13,6 +13,7 @@ my $T = catdir '' , '' ; # ファイルのディレクトリの区切り文字
 sub getfiles_atdepth ( $ ) { 
   my $dep = (shift) // 1 ;  # どの深さを見るか
   my $ptn = join $T , ("*") x $dep ; 
+  $ptn = join $T , ("*") x ( $dep -1 ) , ".*" if $o{"."} ;
   return  glob "$ptn" ; 
 }
 
@@ -20,13 +21,15 @@ sub alt_say ( @ ) {
   my $f = 1 ;
   my @L = map { $f ^= 1 ; $f ? FAINT $_ : $_ } @_ ;  
   print join " " , @L ; 
-  print "\n" ; 
+  #print "\n" ; 
 }
 
 
 print "Depth\tNon-dir-files\tDir-files\n--\n" ; 
 for ( 1 .. $o{d} ) { 
 	my @files =  getfiles_atdepth $_  ;
+	#@files = grep { my $t = (splitdir $_)[-1] ; $t =~ m/\A\./ } @files if $o{"."} ; 
+	@files = grep { ! m/(\A|$T)\.{1,2}\Z/ } @files if $o{"."} ; 
 	my @dirfiles = grep { -d $_ and  $_ .= "" } @files ; 
 	my @ndfiles = grep { ! -d } @files ; 
 	my $dL = grep { -l } @dirfiles ; 
@@ -39,12 +42,13 @@ for ( 1 .. $o{d} ) {
 	print join "\t" , @out ; 
 	print "\n" and next if $o{v} == 0 ; # <-- v == 0 の場合の特殊処理
 	print "\t" ;
-	my @R = & rep ( @dirfiles ) ; # minstr( @dirfiles ) , maxstr ( @dirfiles ) ; 
-	grep { my @t = splitdir $_ ;  $_ = join $T,  splice @t, -min(scalar @t, $o{v}) } @R ; 	
 #	grep { my @t = splitdir $_ ; my $t = splice @t, -${v} ; $_ = join $T , @t, $t } @R ; 
 #	grep { my @t = splitdir $_ ; grep {$_ = "[$_]" } @t ;  $_ = join $T, @t } @R ; 
+	my @R = map {$_.$T } & rep ( @dirfiles ) ; push @R,  & rep ( @ndfiles ) ; # minstr( @dirfiles ) , maxstr ( @dirfiles ) ; 
+	#my @R =  & rep ( @ndfiles ) ; # minstr( @dirfiles ) , maxstr ( @dirfiles ) ; 
+	grep { my @t = splitdir $_ ;  $_ = join $T,  splice @t, -min(scalar @t, $o{v}) } @R ; 	
 	alt_say @R ;
-	#print "\n" ;
+	print "\n" ;
 }
 
 sub rep ( @ ) { # 代表値の意味。文字列長が最小のものと最大のものも取り出したい
