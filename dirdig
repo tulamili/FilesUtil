@@ -1,10 +1,15 @@
 #!/usr/bin/perl
 use 5.001 ; use strict ; use warnings ; 
 use File::Spec::Functions qw[ splitdir splitpath catdir ] ;
-use Term::ANSIColor qw[ :constants ] ; $Term::ANSIColor::AUTORESET = 1 ; 
-use Getopt::Std ; getopts '.d:v:' , \my %o ;
-use List::Util qw [ minstr maxstr reduce min] ; 
+use Term::ANSIColor qw[ :constants color ] ; $Term::ANSIColor::AUTORESET = 1 ; 
+use Getopt::Std ; 
+use List::Util qw [ minstr maxstr reduce min sum0 sum reduce ] ; 
 
+
+getopts '.bd:lv:' , \my %o ;
+chdir "$ARGV[0]" if @ARGV ;
+
+$| = 1 ;
 $o{d} //= 3 ; # どこまでディレクトリを深く潜るか
 $o{v} //= 1 ; # 長いpathのうち最後のディレクトリ階層の最後の何個までを出力するか。
 my $T = catdir '' , '' ; # ファイルのディレクトリの区切り文字
@@ -24,8 +29,12 @@ sub alt_say ( @ ) {
   #print "\n" ; 
 }
 
+sub uniq ( @ ) { my %s= () ; grep ! $s{$_} ++ , @_ }
 
-print "Depth\tNon-dir-files\tDir-files\n--\n" ; 
+my @H = qw [ Depth Non-dir-files Dir-Files ]  ; 
+push @H , "Sum_FileSize" if $o{b} ; 
+push @H , (CYAN "NonDirFile-examples")."..", (GREEN "DirFile-examples").".." if $o{v} > 0 ;
+print +join ("\t" , @H ) . "\n--\n" ; 
 for ( 1 .. $o{d} ) { 
 	my @files =  getfiles_atdepth $_  ;
 	#@files = grep { my $t = (splitdir $_)[-1] ; $t =~ m/\A\./ } @files if $o{"."} ; 
@@ -38,21 +47,78 @@ for ( 1 .. $o{d} ) {
 	my @out ;
 	push @out , "$_:" ;
 	push @out , do { my $tmp = scalar @ndfiles ; $tmp .= FAINT "($nL)" if $nL ; $tmp } ; 
-	push @out , do { my $tmp = scalar @dirfiles ; $tmp .= FAINT "($dL)" if $nL ; $tmp } ; 
+	push @out , do { my $tmp = scalar @dirfiles ; $tmp .= FAINT "($dL)" if $dL ; $tmp } ; 
+	push @out , do { $_ = sum0 map -s // 0 , @ndfiles ; s/(?<=\d)(?=(\d\d\d)+($|\D))/,/g ; $_ } if $o{b} ; 
 	print join "\t" , @out ; 
 	print "\n" and next if $o{v} == 0 ; # <-- v == 0 の場合の特殊処理
-	print "\t" ;
-#	grep { my @t = splitdir $_ ; my $t = splice @t, -${v} ; $_ = join $T , @t, $t } @R ; 
-#	grep { my @t = splitdir $_ ; grep {$_ = "[$_]" } @t ;  $_ = join $T, @t } @R ; 
-	my @R = map {$_.$T } & rep ( @dirfiles ) ; push @R,  & rep ( @ndfiles ) ; # minstr( @dirfiles ) , maxstr ( @dirfiles ) ; 
-	#my @R =  & rep ( @ndfiles ) ; # minstr( @dirfiles ) , maxstr ( @dirfiles ) ; 
-	grep { my @t = splitdir $_ ;  $_ = join $T,  splice @t, -min(scalar @t, $o{v}) } @R ; 	
+	print "\t" , color("cyan") ;
+	my @R = () ;
+	push @R , & rep ( @ndfiles ) ; 
+	###push @R , & rep ( @ndfiles ) ; # minstr( @dirfiles ) , maxstr ( @dirfiles ) ; 
+	#grep { my @t = grep {$_ ne ""} splitdir $_; $_=(join$T,splice @t,-min(scalar@t,$o{v})).(-d $_ ?$T:'') } @R ; 	
+	grep { my @t = grep {1} splitdir $_; $_=(join$T,splice @t,-min(scalar@t,$o{v})).(-d $_ ?$T:'') } @R ; 	
+	# 上記で  grep が本質的に必要か?
 	alt_say @R ;
+	print "\t" , color ( "green") ;
+	@R = () ;
+	push @R , & rep ( @dirfiles ) ; # minstr( @dirfiles ) , maxstr ( @dirfiles ) ; 
+	grep { my @t = grep {1} splitdir $_; $_=(join$T,splice @t,-min(scalar@t,$o{v})).(-d $_ ?$T:'') } @R ; 	
+	alt_say @R ;
+	print color ("reset") ; 
 	print "\n" ;
 }
 
 sub rep ( @ ) { # 代表値の意味。文字列長が最小のものと最大のものも取り出したい
-	my @L = @_ ; 
-	@L = map $_->[0] , sort { $a->[1] cmp $b->[1] } map [$_, (splitdir $_)[-1]], @L  ;
-	return $L[0], $L[-1] ; 
+	sub sd { splitdir shift } ;  
+	sub len { length shift } ; 
+	my @L = () ; 
+	if ( 1 or ! $o{l} ){ 
+	  push @L , reduce { (sd $a)[-1] lt (sd $b)[-1] ? $a : $b } @_ ;
+	  push @L , reduce { (sd $a)[-1] gt (sd $b)[-1] ? $a : $b } @_ ;
+    }
+	if ($o{l}) {
+	  push @L ,reduce { len ((sd $a)[-1]) < len((sd $b)[-1]) || (sd $a)[-1] lt (sd $b)[-1] ? $a : $b } @_ ;
+	  push @L ,reduce { len ((sd $a)[-1]) > len((sd $b)[-1]) || (sd $a)[-1] gt (sd $b)[-1] ? $a : $b } @_ ;
+    }
+	return uniq grep { defined } @L ;
 }
+
+
+
+
+## ヘルプの扱い
+sub VERSION_MESSAGE {}
+sub HELP_MESSAGE {
+    use FindBin qw[ $Script ] ; 
+    $ARGV[1] //= '' ;
+    open my $FH , '<' , $0 ;
+    while(<$FH>){
+        s/\$0/$Script/g ;
+        print $_ if s/^=head1// .. s/^=cut// and $ARGV[1] =~ /^o(p(t(i(o(ns?)?)?)?)?)?$/i ? m/^\s+\-/ : 1;
+    }
+    close $FH ;
+    exit 0 ;
+}
+
+=encoding utf8
+=head1
+　$0 
+
+  カレントディレクトリの n (n=1,2,3.. ) 階層下のディレクトリにある、
+  非ディレクトリファイルの個数とディレクトリの個数を出力する。
+  それらの個数について、それらの内のリンクファイルを括弧内に出力する。
+
+ オプション ;
+
+    -d N  : 何階層下まで潜るかを指定する。未指定なら3と見なす。
+    -b : 各階層についての、非ディレクトリファイルについての、バイト数の合計も出力する。
+    -v N  : N > 0 の場合、具体的なファイル名の例(文字列としての最小値と最大値)も出力。各パスは右からN階層に制限される。
+    -l : ファイル名を出力する場合に、ファイル名の部分が文字列長として最小のものと最大のものも出力される。
+ 
+    -. : 隠しファイルについて調べる。意図しない動作をするかも知れない。
+=cut 
+
+
+
+
+
