@@ -1,0 +1,54 @@
+#!/usr/bin/perl
+use 5.001 ; use strict ; use warnings ; 
+use File::Spec::Functions qw[ splitdir splitpath catdir ] ;
+use Term::ANSIColor qw[ :constants ] ; $Term::ANSIColor::AUTORESET = 1 ; 
+use Getopt::Std ; getopts '.d:v:' , \my %o ;
+use List::Util qw [ minstr maxstr reduce min] ; 
+
+$o{d} //= 3 ; # どこまでディレクトリを深く潜るか
+$o{v} //= 1 ; # 長いpathのうち最後のディレクトリ階層の最後の何個までを出力するか。
+my $T = catdir '' , '' ; # ファイルのディレクトリの区切り文字
+
+
+sub getfiles_atdepth ( $ ) { 
+  my $dep = (shift) // 1 ;  # どの深さを見るか
+  my $ptn = join $T , ("*") x $dep ; 
+  return  glob "$ptn" ; 
+}
+
+sub alt_say ( @ ) {
+  my $f = 1 ;
+  my @L = map { $f ^= 1 ; $f ? FAINT $_ : $_ } @_ ;  
+  print join " " , @L ; 
+  print "\n" ; 
+}
+
+
+print "Depth\tNon-dir-files\tDir-files\n--\n" ; 
+for ( 1 .. $o{d} ) { 
+	my @files =  getfiles_atdepth $_  ;
+	my @dirfiles = grep { -d $_ and  $_ .= "" } @files ; 
+	my @ndfiles = grep { ! -d } @files ; 
+	my $dL = grep { -l } @dirfiles ; 
+	my $nL = grep { -l } @ndfiles ; 
+
+	my @out ;
+	push @out , "$_:" ;
+	push @out , do { my $tmp = scalar @ndfiles ; $tmp .= FAINT "($nL)" if $nL ; $tmp } ; 
+	push @out , do { my $tmp = scalar @dirfiles ; $tmp .= FAINT "($dL)" if $nL ; $tmp } ; 
+	print join "\t" , @out ; 
+	print "\n" and next if $o{v} == 0 ; # <-- v == 0 の場合の特殊処理
+	print "\t" ;
+	my @R = & rep ( @dirfiles ) ; # minstr( @dirfiles ) , maxstr ( @dirfiles ) ; 
+	grep { my @t = splitdir $_ ;  $_ = join $T,  splice @t, -min(scalar @t, $o{v}) } @R ; 	
+#	grep { my @t = splitdir $_ ; my $t = splice @t, -${v} ; $_ = join $T , @t, $t } @R ; 
+#	grep { my @t = splitdir $_ ; grep {$_ = "[$_]" } @t ;  $_ = join $T, @t } @R ; 
+	alt_say @R ;
+	#print "\n" ;
+}
+
+sub rep ( @ ) { # 代表値の意味。文字列長が最小のものと最大のものも取り出したい
+	my @L = @_ ; 
+	@L = map $_->[0] , sort { $a->[1] cmp $b->[1] } map [$_, (splitdir $_)[-1]], @L  ;
+	return $L[0], $L[-1] ; 
+}
