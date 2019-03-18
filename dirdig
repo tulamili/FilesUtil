@@ -5,9 +5,8 @@ use Term::ANSIColor qw[ :constants color ] ; $Term::ANSIColor::AUTORESET = 1 ;
 use Getopt::Std ; 
 use List::Util qw [ minstr maxstr reduce min sum0 sum reduce ] ; 
 
-
-getopts '.bd:lv:' , \my %o ;
-chdir "$ARGV[0]" if @ARGV ;
+getopts '.0bd:lv:' , \my %o ;
+chdir "$ARGV[0]" or die if @ARGV ;
 
 $| = 1 ;
 $o{d} //= 3 ; # どこまでディレクトリを深く潜るか
@@ -16,9 +15,12 @@ my $T = catdir '' , '' ; # ファイルのディレクトリの区切り文字
 
 
 sub getfiles_atdepth ( $ ) { 
-  my $dep = (shift) // 1 ;  # どの深さを見るか
-  my $ptn = join $T , ("*") x $dep ; 
-  $ptn = join $T , ("*") x ( $dep -1 ) , ".*" if $o{"."} ;
+  my $d = (shift) // 1 ;  # どの深さを見るか d = depth
+  my $S = $d >= 0 ? '*' : '..' ; # Symbol
+  $d = abs $d ;
+  my $ptn = join $T , $d == 0 ? '.' : ( ($S)x($d-1) , $o{"."} ? ".*" : $S ) ; 
+  $ptn =~ s/..$/..\/*/ ;
+  #print "[$ptn]" ;
   return  glob "$ptn" ; 
 }
 
@@ -35,7 +37,9 @@ my @H = qw [ Depth Non-dir-files Dir-Files ]  ;
 push @H , "Sum_FileSize" if $o{b} ; 
 push @H , (CYAN "NonDirFile-examples")."..", (GREEN "DirFile-examples").".." if $o{v} > 0 ;
 print +join ("\t" , @H ) . "\n--\n" ; 
-for ( 1 .. $o{d} ) { 
+
+my @dep = $o{d} >= 0 ? ($o{0} ? 0:1) .. $o{d} : reverse $o{d} .. ($o{0} ? 0:-1) ; 
+for ( @dep ) { 
 	my @files =  getfiles_atdepth $_  ;
 	#@files = grep { my $t = (splitdir $_)[-1] ; $t =~ m/\A\./ } @files if $o{"."} ; 
 	@files = grep { ! m/(\A|$T)\.{1,2}\Z/ } @files if $o{"."} ; 
@@ -66,6 +70,8 @@ for ( 1 .. $o{d} ) {
 	alt_say @R ;
 	print color ("reset") ; 
 	print "\n" ;
+
+	last if @dirfiles == 0 && ! $o{'.'} && $o{d} > 0 ;
 }
 
 sub rep ( @ ) { # 代表値の意味。文字列長が最小のものと最大のものも取り出したい
@@ -83,9 +89,6 @@ sub rep ( @ ) { # 代表値の意味。文字列長が最小のものと最大�
 	return uniq grep { defined } @L ;
 }
 
-
-
-
 ## ヘルプの扱い
 sub VERSION_MESSAGE {}
 sub HELP_MESSAGE {
@@ -102,23 +105,18 @@ sub HELP_MESSAGE {
 
 =encoding utf8
 =head1
-　$0 
-
+　$0 [dirname]
   カレントディレクトリの n (n=1,2,3.. ) 階層下のディレクトリにある、
   非ディレクトリファイルの個数とディレクトリの個数を出力する。
   それらの個数について、それらの内のリンクファイルを括弧内に出力する。
-
+  dirname が指定された場合は、そのディレクトリを起点に調べる。
  オプション ;
-
-    -d N  : 何階層下まで潜るかを指定する。未指定なら3と見なす。
+    -d N  : 何階層下まで潜るかを指定する。未指定なら3と見なす。負の数を指定すると親ディレクトリの方向に上がっていく。
     -b : 各階層についての、非ディレクトリファイルについての、バイト数の合計も出力する。
     -v N  : N > 0 の場合、具体的なファイル名の例(文字列としての最小値と最大値)も出力。各パスは右からN階層に制限される。
     -l : ファイル名を出力する場合に、ファイル名の部分が文字列長として最小のものと最大のものも出力される。
  
-    -. : 隠しファイルについて調べる。意図しない動作をするかも知れない。
+    -. : 隠しファイルについて調べる。
+    -0 : 起点の直下から下の方向へ見ていくのではなくて、起点自身から下の方向に見ていく。
 =cut 
-
-
-
-
 
