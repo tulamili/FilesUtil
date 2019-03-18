@@ -19,7 +19,7 @@ sub getfiles_atdepth ( $ ) {
   my $S = $d >= 0 ? '*' : '..' ; # Symbol
   $d = abs $d ;
   my $ptn = join $T , $d == 0 ? '.' : ( ($S)x($d-1) , $o{"."} ? ".*" : $S ) ; 
-  $ptn =~ s/..$/..\/*/ ;
+  $ptn =~ s/..$/..$T*/ ;
   #print "[$ptn]" ;
   return  glob "$ptn" ; 
 }
