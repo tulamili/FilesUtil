@@ -2,7 +2,7 @@
 use 5.001 ; use strict ; use warnings ; 
 use Time::HiRes qw[gettimeofday tv_interval] ; 
 my $time_start = [ gettimeofday ] ; 
-use Getopt::Std ; getopts '.cd:vy' , \my%o ; 
+use Getopt::Std ; getopts '.cdvy' , \my%o ; 
 use Term::ANSIColor qw [ :constants ] ; $Term::ANSIColor::AUTORESET = 1 ; 
 use File::Spec::Functions qw[catfile splitdir ] ; 
 use List::Util qw[ minstr maxstr ] ;
@@ -14,10 +14,10 @@ exit 0 ;
 
 sub measure_simple { 
   my @tmp ;
-  push @tmp , "Non-dir files" , CYAN "Dir files"  ;
-  push @tmp , BRIGHT_BLUE "max_depth" if defined $o{d} && $o{d} eq 'd' ; 
+  push @tmp , "Non-dir-child-files" , CYAN "Dir-child-files"  ;
+  push @tmp , BRIGHT_BLUE "max_depth all-files" if defined $o{d} ;
   push @tmp , BRIGHT_CYAN "Given directory" ;
-  push @tmp , BRIGHT_BLUE "A file name at the max depth" if defined $o{d} && $o{d} eq 'd' ; 
+  push @tmp , BRIGHT_BLUE "A file name at the max depth" if defined $o{d} ;
   push @tmp , ("fileName_minstr" , (BRIGHT_WHITE "fileName_maxstr" ) ) if $o{v} ; 
   print join "\t" , @tmp ; 
   print "\n--\n" ;
@@ -31,13 +31,17 @@ sub measure_simple {
     my @files = grep {! /\A\.{1,2}\Z/ } readdir $dh  ; 
     @files = grep {/\A\./ } @files if $o{'.'} ; 
     @files = grep {! /\A\./ } @files if $o{c} ; 
-    my $dnum = do { my $t = $_ ; grep { -d "$t$T$_" and  $_ = $_.$T } @files } ; 
-    my $pnum = (scalar @files) - $dnum ;
-    my ($dp, $dn) = max_depth ( $_ ) if $o{d}//'' eq 'd' ;
+    #my $dnum = do { my $t = $_ ; grep { -d "$t$T$_" and  $_ = $_.$T } @files } ; 
+    my @ddir = do { my $t = $_ ; grep { -d "$t$T$_" and  $_ = $_.$T } @files } ; 
+    my $dnum = (scalar @ddir) . do { my $t = $_ ; my @L = grep {-l "$t$T$_"} @ddir ; my $l = @L ; $l == 0 ? "" : FAINT "($l)"  }  ;
+    #my $pnum = (scalar @files) - $dnum ;
+    my @pfile =do { my $t = $_ ; grep { ! -d "$t$T$_" } @files } ; 
+    my $pnum = (scalar @pfile ). do { my $t = $_ ; my @L = grep {-l "$t$T$_"} @pfile ; my $l = @L ; $l == 0 ? "" : FAINT "($l)"  }  ;
+    my ($dp, $dn , $finum, $links ) = max_depth ( $_ ) if $o{d} ;
 
     my @out ; 
     push @out , $pnum , CYAN $dnum ;
-    push @out , BRIGHT_BLUE $dp if defined $dp ; # 最も深い所の深さ
+    push @out , BRIGHT_BLUE "$dp\t$finum" . ($links ? FAINT "($links)" : '') if defined $dp ; # 最も深い所の深さ  それと数えたファイル数
     push @out , BRIGHT_CYAN $_ . $T ; 
     push @out , BRIGHT_BLUE $dn if defined $dn ; # 最も深い所にあるファイルの名前
     if ( $o{v} ) { 
@@ -62,13 +66,15 @@ sub max_depth ( $ ) {
   my $d = 0 ; # 最大の深さ
   my $dname = '' ; # 最も深い所にあるファイルの名前
   my $t ; # 仮変数
+  my $n = 0 ; # ついでにファイルの個数も数える。
+  my $l = 0 ; # リンクファイルの個数
    #find ( {wanted => sub { -d $_ and $t = splitdir ( $_ ) and  $d = $t if $t > $d } }  , $_[0] ) ; 
    find ( {
     no_chdir => 1 , 
     #wanted => sub { -d $_ and my @t = splitdir ( $_ ); $d=@t and $dname=$_ if @t> $d }}  , $_[0] ) ; 
-    wanted => sub { my @t = splitdir ( $_ ); $d=@t and $dname=$_ if @t> $d }}  , $_[0] ) ; 
+    wanted => sub { $n++ ; $l ++ if -l $_ ; my @t = splitdir ( $_ ); $d=@t and $dname=$_ if @t> $d }}  , $_[0] ) ; 
    $d .= '/' if -d $d ;
-   return $d, $dname ;
+   return $d, $dname , $n , $l ;
 }
 
 sub VERSION_MESSAGE {}
@@ -91,6 +97,7 @@ sub HELP_MESSAGE {
  $0 args..
 
   引数args で指定されたディレクトリの直下にある、非ディリクトリファイルの数とディレトリの数を出力する。
+  シンボリックファイルの個数は括弧内に示す。 
 
  オプション: 
 
@@ -100,7 +107,7 @@ sub HELP_MESSAGE {
 
   -y  : ディレクトリ以外のものについて何もメッセージを出さない。
 
-  -d d ; -d d の指定で、最も深い所にあるファイルの名前とその深さを示す。
+  -d  ; 最も深い所にあるファイルの名前とその深さを示す。さらに、findで見つかるファイルの個数も出力。
 
  開発上のメモ: 
    * -d d が少し奇妙である。もともと -d N (-d 数) で設計するつもりでいた。
