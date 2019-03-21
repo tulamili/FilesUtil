@@ -5,14 +5,20 @@ use Term::ANSIColor qw[ :constants color ] ; $Term::ANSIColor::AUTORESET = 1 ;
 use Getopt::Std ; 
 use List::Util qw [ minstr maxstr reduce min sum0 sum reduce ] ; 
 
-getopts '.0M:bd:lpv:' , \my %o ;
+getopts ',.@:0M:W:bd:lpv:' , \my %o ;
 chdir "$ARGV[0]" or die if @ARGV ;
 
 $| = 1 ;
-$o{d} //= 3 ; # どこまでディレクトリを深く潜るか
+$o{d} //= 5 ; # どこまでディレクトリを深く潜るか
 $o{v} //= 1 ; # 長いpathのうち最後のディレクトリ階層の最後の何個までを出力するか。
 my $T = catdir '' , '' ; # ファイルのディレクトリの区切り文字
 dig_simple () ;
+
+sub d3 ( $ ) {  # -, の指定があれば、数値は3桁ごとに区切る。
+	my $ret = shift ; 
+	$ret =~ s/(?<=\d)(?=(\d\d\d)+($|\D))/,/g if $o{','} ;
+	return $ret ;
+}
 
 sub getfiles_atdepth ( $ ) { 
   my $d = (shift) // 1 ;  # どの深さを見るか d = depth
@@ -35,17 +41,28 @@ sub uniq ( @ ) { my %s= () ; grep ! $s{$_} ++ , @_ }
 
 sub dig_simple {
   my @H = qw [ Depth Non-dir-files Dir-Files ]  ; 
-  push @H , "Sum_FileSize" if $o{b} ; 
-  if ( $o{M} ) {
+  grep { $_ = $_ . FAINT "(symbolic links)"} @H[1,2] ;
+  push @H , "Sum_FileSize_inBytes" if $o{b} ; 
+  if ( defined $o{M} ) {
   	push @H, YELLOW "[File-numbers of sub-directories that are among the most]" ; 
   	push @H, "Such sub-directories .." ;
   }
-  else { 
+
+  if ( defined $o{W} ) {
+  	push @H , YELLOW "[Frequent Num of the same file (bottom) name]" ; 
+  	push @H , "Such (bottom) file names .. " ;
+  }
+  if ( ! defined $o{M} && ! defined $o{W} ) { 
   	push @H , (CYAN "NonDirFile-examples")."..", (GREEN "DirFile-examples").".." if $o{v} > 0 ;
   }
   print +join ("\t" , @H ) . "\n--\n" ; 
   
+  # どの深さを読むか設定
+  $o{d} += $o{'@'} if defiend $o{'@'} && $o{d} < $o{'@'} ; 
   my @dep = $o{d} >= 0 ? ($o{0} ? 0:1) .. $o{d} : reverse $o{d} .. ($o{0} ? 0:-1) ; 
+  @dep = grep { $_ >= $o{'@'}} @dep if defined $o{'@'} ;
+
+  # 各深さでループを回す
   for ( @dep ) { 
     my @files =  getfiles_atdepth $_  ;
     #@files = grep { my $t = (splitdir $_)[-1] ; $t =~ m/\A\./ } @files if $o{"."} ; 
@@ -57,36 +74,46 @@ sub dig_simple {
   
     my @out ;
     push @out , "$_:" ;
-    push @out , do { my $tmp = scalar @ndfiles ; $tmp .= FAINT "($nL)" if $nL ; $tmp } ; 
-    push @out , do { my $tmp = scalar @dirfiles ; $tmp .= FAINT "($dL)" if $dL ; $tmp } ; 
-    push @out , do { $_ = sum0 map -s // 0 , @ndfiles ; s/(?<=\d)(?=(\d\d\d)+($|\D))/,/g ; $_ } if $o{b} ; 
+    push @out , do { my $tmp = scalar @ndfiles ; $tmp .= FAINT "($nL)" if $nL ; d3 $tmp } ; 
+    push @out , do { my $tmp = scalar @dirfiles ; $tmp .= FAINT "($dL)" if $dL ; d3 $tmp } ; 
+    push @out , do { $_ = sum0 map -s // 0 , @ndfiles ; d3( $_ ) } if $o{b} ; 
     print join "\t" , @out ; 
 
-    if ( defined $o{M} ) { 
-    	my @dirs0 = @dirfiles ; # ここでコピーをしないと支障が
-    	my @fnums = map { opendir my $dh,$_ or print RED $_ ; my @t = readdir $dh ; closedir $dh ; scalar @t } grep { -r } @dirs0 ; 
+    if ( defined $o{M} ) { # ソートで効率の悪い箇所あり
+    	my @dirs0 = @dirfiles ; # ここでコピーをしないと支障があったが、既にその状態は解消されたかも
+    	my @fnums = map { opendir my $dh,$_ or print RED $_ ; my @t = grep { !/\A\.{1,2}\Z/} readdir $dh ; closedir $dh ; scalar @t } grep -r, @dirs0 ; 
     	my @t = splice @{ [ sort { $b->[1] <=> $a->[1] } map {[$_,$fnums[$_]]} 0 .. $#fnums ] } , 0, $o{M} ; 
-    	print YELLOW "\t[". ( join "," , map {$_->[1]} @t ) . "]\t" ; 
+    	print YELLOW "\t[". ( join ", " , map {$_->[1]} @t ) . "]\t" ; 
     	alt_say map { $dirs0[ $_ -> [0] ] } @t ;
-    	print "\n" ;
-   	    last if @dirfiles == 0 && ! $o{'.'} && $o{d} > 0 ;
-
-    	next ; 
+    	#print "\n" ;
+   	    #last if @dirfiles == 0 && ! $o{'.'} && $o{d} > 0 ;
+    	#next ; 
     }
 
+    if ( defined $o{W} ) { # ソートで効率の悪い箇所あり
+    	my %c ; # ファイル名ごとの出現頻度を計数
+    	#grep { $_ .= $T if -d } @files ; 
+    	$c{$_} ++ for map { (splitdir $_ )[-1] . (-d $_ ? $T: '') } @files ; 
+    	my @k = splice @{[ sort {$c{$b} <=> $c{$a} || $a cmp $b } keys %c ]} , 0 , $o{W} ;
+    	#print BRIGHT_RED map "[$_]" ,  @k ;
+    	print YELLOW "\t[" . ( join ", ", map { $c{ $_ } } @k ) . "]\t" ; 
+    	alt_say @k ;
+    }
 
-    print "\n" and next if $o{v} == 0 ; # <-- v == 0 の場合の特殊処理
-    print "\t" ;# , color("cyan") ;
-    my @R = () ;
-    push @R , & rep ( @ndfiles ) ; 
-    grep { $_ = CYAN & botD ($_) } @R ;   
-    alt_say @R ;
-    print "\t" ;
-    @R = () ; 
-    push @R , & rep ( @dirfiles ) ;
-    #print RED ":" , scalar @R ;
-    grep { $_  = GREEN & botD ($_) . '/'} @R ; 
-    alt_say @R ;
+    if ( ! defined $o{M} &&  !defined $o{W} ){ 
+      print "\n" and next if $o{v} == 0 ; # <-- v == 0 の場合の特殊処理
+      print "\t" ;# , color("cyan") ;
+      my @R = () ;
+      push @R , & rep ( @ndfiles ) ; 
+      grep { $_ = CYAN & botD ($_) } @R ;   
+      alt_say @R ;
+      print "\t" ;
+      @R = () ; 
+      push @R , & rep ( @dirfiles ) ;
+     #print RED ":" , scalar @R ;
+      grep { $_  = GREEN & botD ($_) . '/'} @R ; 
+      alt_say @R ;
+    }
     print color ("reset") ; 
     print "\n" ;
   
@@ -150,7 +177,7 @@ sub HELP_MESSAGE {
     なお、$0 の引数で dirname を指定した場合は、一旦そこにchdirするので、その先は読む。
 
  オプション ;
-    -d N  : 何階層下まで潜るかを指定する。未指定なら3と見なす。負の数を指定すると親ディレクトリの方向に上がっていく。
+    -d N  : 何階層下まで潜るかを指定する。未指定なら5と見なす。負の数を指定すると親ディレクトリの方向に上がっていく。
     -b : 各階層についての、非ディレクトリファイルについての、バイト数の合計も出力する。
     -v N  : N > 0 の場合、具体的なファイル名の例(文字列としての最小値と最大値)も出力。各パスは右からN階層に制限される。
     -l : ファイル名を出力する場合に、ファイル名の部分が文字列長として最小のものと最大のものも出力される。
@@ -159,6 +186,13 @@ sub HELP_MESSAGE {
     -0 : 起点の直下から下の方向へ見ていくのではなくて、起点自身から下の方向に見ていく。
     -p : 探索したパターン(どんなワイルドカードを使ったか)を表示する。
 
-    -M N ; 各階層において、最もファイルを持つディレクトリを、その階層からN個見つけ出す。
+    -M N ; 各階層において、最も多数の子ファイルを持つディレクトリを、その階層からN個見つけ出す。
+    -W N ; 各階層において、ファイル名(ただし区切り文字で区切られたものが最後のもの)で最頻のものN個を取り出す。
+
+    -, : 出力する数値について、3桁ごと(1000進数として)区切るようにする。
+    -@ N ; どの深さから読み始めるかの指定。
+
+  開発上のメモ : 
+    * Ctrl+Cでその時に処理している階層の探索は中止して、次に進むようにしたい。  
 =cut 
 
