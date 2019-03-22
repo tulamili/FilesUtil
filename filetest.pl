@@ -1,5 +1,5 @@
-#!/usr/bin/perl 
-use 5.008 ; use strict ; use warnings ; 
+#!/usr/bin/perl
+use 5.008 ; use strict ; use warnings ;
 use Getopt::Std ; getopts '12l:n' , \my%o ;
 
 $o{l} //= 7 ; #最大何文字に制限するか
@@ -7,26 +7,26 @@ my @X = split //,"rwxoRWXOezsfdlpSbctugkTBMAC", 0 ;
 my %a  ; # 返答の格納
 
 
-sub lcut ( $ ) { substr $_[0] , 0 , $o{l} } ; 
-sub trans ( $ ) { 
-	my $t = ! defined $_[0] ? "undef" : $o{1} ? qq['$_[0]'] : $o{2} ? qq["$_[0]"] : $_[0] ; 
+sub lcut ( $ ) { substr $_[0] , 0 , $o{l} } ;
+sub trans ( $ ) {
+	my $t = ! defined $_[0] ? "undef" : $o{1} ? qq['$_[0]'] : $o{2} ? qq["$_[0]"] : $_[0] ;
 	#$t = qq["$t"] if $o{'.'} ;
 	return $t ;
-} 
+}
 
-push @ARGV , '.' if ! @ARGV ; 
-my @prtF = ! $o{n} ? @ARGV : map { "file$_" } 1 .. @ARGV ; 
+push @ARGV , '.' if ! @ARGV ;
+my @prtF = ! $o{n} ? @ARGV : map { "file$_" } 1 .. @ARGV ;
 print join ( "\t" , @prtF , "The written definition from perldoc -f -X.") , "\n" ;
 
-for ( @ARGV ) { 
-	my $file = $_ ; 
-	grep { $a{$_} .=  lcut ( trans ( eval qq[-$_ "$file"]  ) )  . "\t"} @X ; 
+for ( @ARGV ) {
+	my $file = $_ ;
+	grep { $a{$_} .=  lcut ( trans ( eval qq[-$_ "$file"]  ) )  . "\t"} @X ;
 }
-#print "\n\n\n" ,scalar @ARGV , "\n\n\n" ; 
+#print "\n\n\n" ,scalar @ARGV , "\n\n\n" ;
 
 
 #print map{"[$_]"} keys %a ;
-print 
+print
 <<END ;
 $a{r}: -r  File is readable by effective uid/gid.
 $a{w}: -w  File is writable by effective uid/gid.
@@ -81,19 +81,18 @@ sub HELP_MESSAGE {
 
 =head1
 
- $0 FILE [FILE] [FILE] .. 
+ $0 FILE [FILE] [FILE] ..
 
    Perl言語で提供されているファイルテスト関数を、引数に示された各ファイルに対して実行した結果を示す。
 
- オプション: 
+ オプション:
 
    -l N : 値を先頭(左)から N文字に制限する。
    -n : (ファイル名を隠すなどの目的で) 与えたファイル名を出力するときには file1, file2, .. と出力する。
    -1 : 結果をシングルクオーテーションで囲う。
    -2 : 結果をダブルクオーテーションで囲う。
 
-  開発上のメモ: 
+  開発上のメモ:
     * システムコールを節約するために、stat や lstat を使うと _ でここでやったような処理が出来るようだ。試したい。
 
 =cut
-
