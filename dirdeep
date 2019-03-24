@@ -5,41 +5,71 @@ use feature qw [ say ] ;
 use Term::ANSIColor qw [ :constants color ] ; $Term::ANSIColor::AUTORESET = 1 ; 
 use File::Spec::Functions qw[ catfile splitdir ] ; 
 use Getopt::Std ; getopts '.cdvy' , \my%o ; 
-my $I = catfile '' , '' ; # OS毎に異なる可能性のある、ファイルパスの区切り文字を取得。 
-my $start_dir = $ARGV [0] // "." ;
-my $root = ::dirtree -> new ( undef ) ;
-chdir $start_dir or die ; 
-#say map "[$_]" , & get_dirs ( $start_dir ) ;
-our $m = 0 ;
-my $depth = 0 ;
-$root -> rec_dir ( "." , $depth ) ; 
-exit 0 ;
 
 sub get_dirs () { 
   opendir my $dh , '.' or warn $_[0] ; 
-  my @dirs0 = readdir $dh ;
-  my @dirs = grep { ! /\A\.{1,2}\Z/ && -d $_ } @dirs0 ; #readdir $dh ; # 隠しファイルの処理も加えたい <-- -d に限定している
-  print FAINT map "[$_]" , @dirs ;
+  my @dirs = grep { ! /\A\.{1,2}\Z/ && -d $_ } readdir $dh ; #readdir $dh ; # 隠しファイルの処理も加えたい <-- -d に限定している
+  #print FAINT map "[$_]" , @dirs ;
   chdir $dh ;
-  closedir $dh ; 
   return @dirs ; 
 }
-
 END{ print RESET "" } ;
+my $I = catfile '' , '' ; # OS毎に異なる可能性のある、ファイルパスの区切り文字を取得。 
+my $start_dir = $ARGV [0] // "." ;
+my $root = ::dirtree -> new () ;
+chdir $start_dir or die ;#say map "[$_]" , & get_dirs ( $start_dir ) ;
 
 package dirtree ;
+use 5.014 ; use strict ; use warnings ;
+use List::Util qw [ reduce ] ;
 use Term::ANSIColor qw [ :constants color ] ; $Term::ANSIColor::AUTORESET = 1 ; 
+our $m = 0 ;
 
-sub new { my %keep = ( dirname => $_[1] // undef , children => [] ) ;	bless \%keep ; } 
+#sub new { my %keep = { "name" => $_[1] , children => [] , parent => undef } ; bless \%keep ; } 
+#sub new { my %keep = () ; bless \%keep ; } 
+sub new { my $R = {} ; bless $R ; } # 上記で初期化のやり方が正しいのどうか気になっている
 
-sub rec_dir ( $$ ) { #  第1引数に子ディレクトリの名前
-	if  ( $m < $_[2]) { $m = $_[2] ; print YELLOW "$m "}
+sub build_recursive ( $$ ) { #  第1引数に子ディレクトリの名前
+	if  ( $m < $_[2]) { $m = $_[2] ; print YELLOW " $m "}
 	opendir my $dh , '.' ;
-	print YELLOW $_[1] ;
+	print YELLOW "[ $_[1] ]" ;
 	chdir $_[1] or do { warn FAINT RED $_ ; return }  ;
-	my $ch = new ( $_[1] ) ; 
+	my $ch = new ( undef ) ; #my $ch = new ( $_[1] ) ; 
 	push @{ $_[0] -> { children } } , $ch ;
-	$ch -> rec_dir ( $_  , $_[2] + 1 ) for ::get_dirs ; # $_[1] ) ;
+	$ch -> { name } = $_[1] ;
+	$ch -> { parent } = $_[0] ;
+	$ch -> { d } = $_[2] ; # 深さを代入 # depth distance 
+	$ch -> build_recursive ( $_  , $_[2] + 1 ) for ::get_dirs ; # $_[1] ) ;
 	chdir $dh ; 
 }
+#no warnings ;
+sub scan () { 
+	return $_[0] if ! defined $_[0] -> { children }  ;
+    say FAINT BRIGHT_BLUE "$_[0]->{name}, $_[0]->{d}" ;  
+	reduce { $a->{d} > $b->{d}  ? $a : $b } map { $_ -> scan () }  @{ $_[0] -> {children} } ;
+}
+
+sub path () { 
+	my $watch = $_[0] ;
+	my @path ; 
+	for my $t ( 1 ..10) {
+		$|= 1 ;
+
+	   $watch = $watch -> {parent} if defined $watch->{parent}; # && $_ = $_[0]->{parent} ) {
+	  	print BLUE $watch, " ";
+	  unshift @path , $_ ->{name} ;
+	} 
+	return join $I , @path ;
+}
+
+package main ;
+$root -> build_recursive ( "." , 0 ) ; #  第二引数 my $depth = 0 ;
+my $tmp = $root -> {children}[0];
+my $tmp2 = $tmp -> scan ;
+my $p = $tmp2 -> path ;
+say CYAN "$tmp2->{name}, $tmp2->{d}, $p" ; 
+exit 0 ;
+
+
+
 
