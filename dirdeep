@@ -4,7 +4,8 @@ use feature qw [ say ] ;
 #use Time::HiRes qw[gettimeofday tv_interval] ; my $time_start = [ gettimeofday ] ; 
 use Term::ANSIColor qw [ :constants color ] ; $Term::ANSIColor::AUTORESET = 1 ; 
 use File::Spec::Functions qw[ catfile splitdir ] ; 
-use Getopt::Std ; getopts 's:g:' , \my%o ; 
+use Getopt::Std ; getopts 'd:g:l:s:' , \my%o ; 
+use List::Util qw [ sum sum0 ] ;
 
 sub get_dirs () { 
   opendir my $dh , '.' or warn $_[0] ; 
@@ -16,10 +17,10 @@ sub get_dirs () {
 
 defined $o{s} ? ( srand $o{s} )  : ( $o{s} = srand ) ; # ランダムseed 
 $o{g} //= 5 ;
-
+$o{l} //= 2 ;
 
 END{
- print RESET "" ; print rand ;
+ print RESET "" ; #print rand ;
  print STDERR CYAN "Used random seed = $o{s}\n";
 } ;
 
@@ -41,14 +42,14 @@ sub new { my $R = {} ; bless $R ; } # 上記で初期化のやり方が正しい
 
 sub build_recursive ( $$ ) { #  第1引数に子ディレクトリの名前
 	if  ( $m < $_[2]) { $m = $_[2] }; #print YELLOW " $m "}
-	opendir my $dh , '.' ;
+	opendir my $dh , '.' ; # 後でここに戻るため
 	#print YELLOW "[ $_[1] ]" ;
 	chdir $_[1] or do { warn FAINT RED $_ ; return }  ;
 	my $ch = new ( undef ) ; #my $ch = new ( $_[1] ) ; 
 	push @{ $_[0] -> { children } } , $ch ;
 	$ch -> { name } = $_[1] ;
 	$ch -> { parent } = $_[0] ;
-	$ch -> { d } = $_[2] ; # 深さを代入 # depth distance 
+	$ch -> { d } = $_[2] + rand ; # 深さを代入 # depth distance 
 	$ch -> build_recursive ( $_  , $_[2] + 1 ) for ::get_dirs ; # $_[1] ) ;
 	chdir $dh ; 
 }
@@ -76,22 +77,83 @@ sub pathProc () {
 
 sub rebuild ($){ 
 	my ( $watch , $d ) = @_ ;#$_[0] ;
-	$watch -> {d} = $d ;
-	$_ -> rebuild ( $d +1 ) for grep { $_->{d} >0 }  @{ $watch -> {children} } ;
+	$watch -> {d} = $d + rand ;
+	$_ -> rebuild ( $d +1 ) for grep { $_->{d} >= 1 }  @{ $watch -> {children} } ;
 }
 
 package main ;
-$root -> build_recursive ( "." , 0 ) ; #  第二引数 my $depth = 0 ;
-my ( $first , $deepest , $dd , $p ) ;
-$first = $root -> {children}[0];
 
-for ( 1..$o{g} ) { 
-  $deepest = $first -> scan ;
-  $dd = $deepest -> {d} ;
-  $p = $deepest -> pathProc ;
-  say CYAN "$deepest->{name}, $dd, $p" ; 
+# ディレクトリ名のパスから、ファイルの個数とサイズを返す。
+sub leafs ($) { 
+	opendir my ( $dh ) , $_[0] ; 
+	my @files = grep { ! m/\A\.{1,2}\Z/ } readdir $dh ;
+	return scalar @files , sum0 map { -s "$_[0]$I$_" } @files ;
+}
+# ディレクトリ名のパスから、ディレクトリの個数を返す
+sub dirfinum ($) { 
+	opendir my ( $dh ) , $_[0] ; 
+	my @files = grep { ! m/\A\.{1,2}\Z/  } readdir $dh ;
+	my $ddirs = grep  { -d "$_[0]$I$_" } @files ;
+	my @ret ; 
+	push @ret , join "+" , $ddirs , scalar @files - $ddirs  if $o{d} =~ m/1/ ;
+	push @ret , sum0 map { -s "$_[0]$I$_" } @files  if $o{d} =~ m/s/ ;
+
+	return join ":" , @ret ; #, sum0 map { -s "$_[0]$I$_" } @files ;
+}
+
+# ディリクトリ名の連結したパス名から、それぞれのディレクトリに、付属するディレクトリの数を数える
+sub path2dnum ( $ ) { 
+  my @f = splitdir $_[0] ;
+  my $tdir = "." ;
+  for ( @f ) { 
+  	$tdir .= $I . $_ ;
+  	my $dnum = dirfinum ( $tdir ) ;
+  	$_ .= FAINT "($dnum)" ;
+  }
+  join $I , @f ;
 }
 
 
-exit 0 ;
+$root -> build_recursive ( "." , 0 ) ; #  第二引数 my $depth = 0 ;
+my ( $first , $furthest , $distance , $path ) ;
+$first = $root -> {children}[0];
+
+for ( 1..$o{g} ) { 
+  $furthest = $first -> scan ;
+  $distance = int $furthest -> {d} ;
+  $path = $furthest -> pathProc ;
+  last if $distance < $o{l} ;
+  my @lf = leafs $path ;
+  #say CYAN "$furthest->{name}, $distance, $path" ; 
+  $path = path2dnum ( $path ) if defined $o{d} ; #&& $o{d} == 1 ;
+  say join "\t" ,  $distance , $path, @lf ; 
+}
+
+package main ; 
+
+## ヘルプの扱い
+sub VERSION_MESSAGE {}
+sub HELP_MESSAGE {
+    use FindBin qw[ $Script ] ; 
+    $ARGV[1] //= '' ;
+    open my $FH , '<' , $0 ;
+    while(<$FH>){
+        s/\$0/$Script/g ;
+        print $_ if s/^=head1// .. s/^=cut// and $ARGV[1] =~ /^o(p(t(i(o(ns?)?)?)?)?)?$/i ? m/^\s+\-/ : 1;
+    }
+    close $FH ;
+    exit 0 ;
+}
+
+=encoding utf8
+=head1
+　$0 [dirname]
+
+ オプション: 
+
+    -s N : set the random seed. 
+    -g N : how many paths do you like to get?  Default: 5 
+    -l N : the least-furtherest distance.  Default: 2 
+    -d C : when C includes : "1" each directory and other file numbers, "s" file byte sum, appear on each directory step.
+
 
