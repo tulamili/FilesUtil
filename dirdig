@@ -19,10 +19,6 @@ defined $o{s} ? ( srand $o{s} )  : ( $o{s} = srand ) ; # ランダムseed
 $o{g} //= 5 ;
 $o{l} //= 2 ;
 
-
-our $tt = 1 ;
-
-
 END{
  print RESET "" ; #print rand ;
  print STDERR CYAN "Used random seed = $o{s}\n";
@@ -98,7 +94,11 @@ sub dirfinum ($) {
 	opendir my ( $dh ) , $_[0] ; 
 	my @files = grep { ! m/\A\.{1,2}\Z/  } readdir $dh ;
 	my $ddirs = grep  { -d "$_[0]$I$_" } @files ;
-	return $ddirs , scalar @files - $ddirs ; #, sum0 map { -s "$_[0]$I$_" } @files ;
+	my @ret ; 
+	push @ret , join "+" , $ddirs , scalar @files - $ddirs  if $o{d} =~ m/1/ ;
+	push @ret , sum0 map { -s "$_[0]$I$_" } @files  if $o{d} =~ m/s/ ;
+
+	return join ":" , @ret ; #, sum0 map { -s "$_[0]$I$_" } @files ;
 }
 
 # ディリクトリ名の連結したパス名から、それぞれのディレクトリに、付属するディレクトリの数を数える
@@ -107,7 +107,7 @@ sub path2dnum ( $ ) {
   my $tdir = "." ;
   for ( @f ) { 
   	$tdir .= $I . $_ ;
-  	my $dnum = join "+" , dirfinum ( $tdir ) ;
+  	my $dnum = dirfinum ( $tdir ) ;
   	$_ .= FAINT "($dnum)" ;
   }
   join $I , @f ;
@@ -125,7 +125,7 @@ for ( 1..$o{g} ) {
   last if $distance < $o{l} ;
   my @lf = leafs $path ;
   #say CYAN "$furthest->{name}, $distance, $path" ; 
-  $path = path2dnum ( $path ) if defined $o{d} && $o{d} == 1 ;
+  $path = path2dnum ( $path ) if defined $o{d} ; #&& $o{d} == 1 ;
   say join "\t" ,  $distance , $path, @lf ; 
 }
 
@@ -154,6 +154,6 @@ sub HELP_MESSAGE {
     -s N : set the random seed. 
     -g N : how many paths do you like to get?  Default: 5 
     -l N : the least-furtherest distance.  Default: 2 
-    -d n : when n = 1 each directory number appears . 
+    -d C : when C includes : "1" each directory and other file numbers, "s" file byte sum, appear on each directory step.
 
 
