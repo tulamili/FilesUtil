@@ -4,7 +4,7 @@ use feature qw [ say ] ;
 #use Time::HiRes qw[gettimeofday tv_interval] ; my $time_start = [ gettimeofday ] ; 
 use Term::ANSIColor qw [ :constants color ] ; $Term::ANSIColor::AUTORESET = 1 ; 
 use File::Spec::Functions qw[ catfile splitdir ] ; 
-use Getopt::Std ; getopts '.cdvy' , \my%o ; 
+use Getopt::Std ; getopts 's:g:' , \my%o ; 
 
 sub get_dirs () { 
   opendir my $dh , '.' or warn $_[0] ; 
@@ -13,7 +13,17 @@ sub get_dirs () {
   chdir $dh ;
   return @dirs ; 
 }
-END{ print RESET "" } ;
+
+defined $o{s} ? ( srand $o{s} )  : ( $o{s} = srand ) ; # ランダムseed 
+$o{g} //= 5 ;
+
+
+END{
+ print RESET "" ; print rand ;
+ print STDERR CYAN "Used random seed = $o{s}\n";
+} ;
+
+
 my $I = catfile '' , '' ; # OS毎に異なる可能性のある、ファイルパスの区切り文字を取得。 
 my $start_dir = $ARGV [0] // "." ;
 my $root = ::dirtree -> new () ;
@@ -30,9 +40,9 @@ our $m = 0 ;
 sub new { my $R = {} ; bless $R ; } # 上記で初期化のやり方が正しいのどうか気になっている
 
 sub build_recursive ( $$ ) { #  第1引数に子ディレクトリの名前
-	if  ( $m < $_[2]) { $m = $_[2] ; print YELLOW " $m "}
+	if  ( $m < $_[2]) { $m = $_[2] }; #print YELLOW " $m "}
 	opendir my $dh , '.' ;
-	print YELLOW "[ $_[1] ]" ;
+	#print YELLOW "[ $_[1] ]" ;
 	chdir $_[1] or do { warn FAINT RED $_ ; return }  ;
 	my $ch = new ( undef ) ; #my $ch = new ( $_[1] ) ; 
 	push @{ $_[0] -> { children } } , $ch ;
@@ -44,32 +54,44 @@ sub build_recursive ( $$ ) { #  第1引数に子ディレクトリの名前
 }
 #no warnings ;
 sub scan () { 
+   no warnings ;  ## <<---- <<--- ここはもんだいです
 	return $_[0] if ! defined $_[0] -> { children }  ;
-    say FAINT BRIGHT_BLUE "$_[0]->{name}, $_[0]->{d}" ;  
-	reduce { $a->{d} > $b->{d}  ? $a : $b } map { $_ -> scan () }  @{ $_[0] -> {children} } ;
+    #$|=  1 ; say STDERR FAINT BRIGHT_BLUE "$_[0]->{name}, $_[0]->{d}, " , map "[$_->{name}]" , @{$_[0]->{children}} ;  
+	#reduce { $a->{d} > $b->{d}  ? $a : $b } map { $_ -> scan () }  @{ $_[0] -> {children} } ;
+    reduce { $a->{d} > $b->{d}  ? $a : $b } map { ($_->scan() , $_ ) }  @{ $_[0] -> {children} } ;
+    # 最も大きいもので最初のものとなる。複数の場合の対処はどうしたものか
 }
 
-sub path () { 
+sub pathProc () { 
 	my $watch = $_[0] ;
-	my @path ; 
-	for my $t ( 1 ..10) {
-		$|= 1 ;
-
-	   $watch = $watch -> {parent} if defined $watch->{parent}; # && $_ = $_[0]->{parent} ) {
-	  	print BLUE $watch, " ";
-	  unshift @path , $_ ->{name} ;
+	my @pathProc = () ; 
+	while ( $watch->{parent}{name} ) {
+	   #$watch -> {d} = 0 ; # <--
+	   $watch -> rebuild ( 0 ) ; #<--
+       unshift @pathProc , $watch->{name} ;
+	   $watch = $watch -> {parent} ;
 	} 
-	return join $I , @path ;
+	return join $I , @pathProc ;
+}
+
+sub rebuild ($){ 
+	my ( $watch , $d ) = @_ ;#$_[0] ;
+	$watch -> {d} = $d ;
+	$_ -> rebuild ( $d +1 ) for grep { $_->{d} >0 }  @{ $watch -> {children} } ;
 }
 
 package main ;
 $root -> build_recursive ( "." , 0 ) ; #  第二引数 my $depth = 0 ;
-my $tmp = $root -> {children}[0];
-my $tmp2 = $tmp -> scan ;
-my $p = $tmp2 -> path ;
-say CYAN "$tmp2->{name}, $tmp2->{d}, $p" ; 
+my ( $first , $deepest , $dd , $p ) ;
+$first = $root -> {children}[0];
+
+for ( 1..$o{g} ) { 
+  $deepest = $first -> scan ;
+  $dd = $deepest -> {d} ;
+  $p = $deepest -> pathProc ;
+  say CYAN "$deepest->{name}, $dd, $p" ; 
+}
+
+
 exit 0 ;
-
-
-
 
