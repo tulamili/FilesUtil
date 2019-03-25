@@ -4,7 +4,7 @@ use feature qw [ say ] ;
 #use Time::HiRes qw[gettimeofday tv_interval] ; my $time_start = [ gettimeofday ] ; 
 use Term::ANSIColor qw [ :constants color ] ; $Term::ANSIColor::AUTORESET = 1 ; 
 use File::Spec::Functions qw[ catfile splitdir ] ; 
-use Getopt::Std ; getopts 'd:g:l:s:' , \my%o ; 
+use Getopt::Std ; getopts 'd:g:l:s:y:' , \my%o ; 
 use List::Util qw [ sum sum0 ] ;
 
 sub get_dirs () { 
@@ -21,7 +21,7 @@ $o{l} //= 2 ;
 
 END{
  print RESET "" ; #print rand ;
- print STDERR CYAN "Used random seed = $o{s}\n";
+ print STDERR BLUE "Used random seed = $o{s}\n";
 } ;
 
 
@@ -102,14 +102,18 @@ sub dirfinum ($) {
 }
 
 # ディリクトリ名の連結したパス名から、それぞれのディレクトリに、付属するディレクトリの数を数える
-sub path2dnum ( $ ) { 
+sub path2dnum ( $ $ ) { 
   my @f = splitdir $_[0] ;
   my $tdir = "." ;
-  for ( @f ) { 
+  if ( defined $o{d} ) { 
+   for ( @f ) { 
   	$tdir .= $I . $_ ;
   	my $dnum = dirfinum ( $tdir ) ;
   	$_ .= FAINT "($dnum)" ;
+   }
   }
+  $f[ - $_[1] ] = YELLOW $f[ - $_[1] ] if defined $o{y} && $o{y} eq '1' ;
+  grep { $f[ $_ ] = YELLOW $f[ $_ ] } -$_[1] .. -1 if defined $o{y} && $o{y} ne '1' ;  
   join $I , @f ;
 }
 
@@ -125,7 +129,7 @@ for ( 1..$o{g} ) {
   last if $distance < $o{l} ;
   my @lf = leafs $path ;
   #say CYAN "$furthest->{name}, $distance, $path" ; 
-  $path = path2dnum ( $path ) if defined $o{d} ; #&& $o{d} == 1 ;
+  $path = path2dnum ( $path , $distance ) ;#if defined $o{d} ; #&& $o{d} == 1 ;
   say join "\t" ,  $distance , $path, @lf ; 
 }
 
@@ -154,6 +158,10 @@ sub HELP_MESSAGE {
     -s N : set the random seed. 
     -g N : how many paths do you like to get?  Default: 5 
     -l N : the least-furtherest distance.  Default: 2 
-    -d C : when C includes : "1" each directory and other file numbers, "s" file byte sum, appear on each directory step.
+    -d 1 : each directory and other file numbers appear on each directory step.
+    -d 2 : "s" file byte sum appeara on each directory step.
+    -y 1 : yellow color on the "branch" directory.
+    -y 2 : yellow color on the "branch" directory and after.
+
 
 
