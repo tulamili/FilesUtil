@@ -1,0 +1,100 @@
+#!/usr/bin/perl
+use 5.014 ; use strict ; use warnings ; 
+use feature qw[ say ] ;
+use Getopt::Std ; 
+use List::Util qw [ shuffle ] ;
+use File::Spec::Functions qw [ splitdir catdir ] ; 
+use Term::ANSIColor qw[ :constants color ] ; $Term::ANSIColor::AUTORESET = 1 ; 
+use Cwd qw [ getcwd ] ;
+
+
+getopts 'd:g:n:s:' , \my %o ;
+$o{g} //= 5 ;  # 各階層から最大いくつ読み込むか
+$o{d} //= 30 ; #最大限読む深さ
+defined $o{s} ? ( srand $o{s} )  : ( $o{s} = srand ) ; # ランダムseed 
+
+sub alt_faint ( @ ) {  my $f = 1 ;  map { $f ^= 1 ; $f ? FAINT $_ : $_ } @_ }
+
+# ファイル群の配列に対して、ディレクトリの個数とそれ以外の個数を返す。
+sub dfcount ( @ ) { 
+  return '' if defined $o{n} && $o{n} eq 0 ; 
+  my $d = grep { -d $_ } @_ ; 
+  my $f = @_ - $d ; 
+  return "$d+$f" ; 
+}
+
+# 与えられた1個のディレクトリに対して、その下の dfcountを返す。
+sub dfdir ( $ ) { 
+  opendir my ($dh) , "." or do { print STDERR FAINT BOLD YELLOW "Opendir trouble at : " , getcwd () ; return "" } ; 
+  opendir my ($dh2) , $_[0] or do { return '.' ; print STDERR FAINT YELLOW "Opendir `$_[0] trouble at : " , getcwd () ; return "" } ; 
+  #say RED "$_[0]: ", BRIGHT_RED FAINT map { "[$_]" } 
+  my @t = grep ! /\A\.{1,2}\Z/ , readdir $dh2 ;
+  chdir $dh2 ;
+  my $o = dfcount @t ; #( grep ! /\A\.{1,2}\Z/ , readdir $dh2 ) ; 
+  chdir $dh ; 
+  return $o 
+}
+
+sub firstcolor ( @ ) { 
+	return +(GREEN $_[0]) , @_[1 .. $#_] ;
+}
+
+my $I = catdir '' , '' ;
+
+my $path ; # 入力したパス
+$path = ( shift ) // '.' ;
+#$path =~ s/\ /\\ /g ;
+
+#say $path ;
+
+my $y = 1 ; 
+for ( splitdir $path ) { # 各階層のディレクトリで回す。
+	opendir my ($dh) , "." ; #$_ ; 
+	#chdir '/' if $_ eq '' ;
+	my @sibfiles ; # 兄弟ファイル
+	my $inexistent = 1 ; # 存在しないことのフラグ
+	@sibfiles = do { my $t = $_ ; grep { ! /\A\.{1,2}\Z/ and $_ ne $t || ($inexistent = 0) }  readdir $dh } ; 
+	#@sibfiles =  shuffle @sibfiles ;
+	do { last ; say STDERR FAINT BOLD YELLOW "$_ does not seems exist." ; last } if $inexistent == 1 ;
+	my @showfiles = map  { -d $_ ? $_.$I : $_ }  ( $_ , sort splice @{ [ shuffle @sibfiles] } , 0, $o{g} ) ;
+    my @dfShowFiles = map { my $df = dfdir $_ ; $_ . ($df eq '' ? '' : FAINT "($df)" )  } @showfiles ;
+	say join "\t" , "$y:" . ( FAINT BOLD ( dfcount ( $_ , @sibfiles )  ) ) , firstcolor @dfShowFiles  ; 
+	#say qq["$y\t$_"] ;
+	chdir $_ ;
+	$y ++ ;
+	last if $y > $o{d} ;
+	#last ;
+}
+print STDERR " -- " , FAINT " Used random seed: " , CLEAR " $o{s} \n" ;
+#s#ay STDERR " " , REVERSE ITALIC " Process time: " , CLEAR " " , ( tv_interval $time_start , [ gettimeofday ] ) , " second(s)." ;
+
+
+## ヘルプの扱い
+sub VERSION_MESSAGE {}
+sub HELP_MESSAGE {
+    use FindBin qw[ $Script ] ; 
+    $ARGV[1] //= '' ;
+    open my $FH , '<' , $0 ;
+    while(<$FH>){
+        s/\$0/$Script/g ;
+        print $_ if s/^=head1// .. s/^=cut// and $ARGV[1] =~ /^o(p(t(i(o(ns?)?)?)?)?)?$/i ? m/^\s+\-/ : 1;
+    }
+    close $FH ;
+    exit 0 ;
+}
+
+=encoding utf8
+=head1
+　$0 path
+
+     path を区切って，各階層の兄弟に当たるファイルを見つけ出す。添えられた数字+数字の形式は、そこにある ディレクトリ数と非ディレクトリファイル数を示す。
+
+  オプション : 
+     -d N : 上から最大 N 階層まで降りる。
+     -g N : 出力の各行において、最大 N 個取り出す
+     -n 0 : ディレクトリ数と非ディレクトリファイル数の出力を抑制する。
+     -s N : ランダムシードの設定。再現性確保のため。
+
+  開発メモ: 
+     * 引数で絶対パス指定の時に、うまく行かない。改善せよ。
+
