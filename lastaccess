@@ -1,0 +1,91 @@
+#!/usr/bin/perl
+use 5.014 ; use strict ; use warnings ; 
+use File::Find ; 
+use Time::HiRes qw[ stat tv_interval time gettimeofday ] ;
+use Getopt::Std ; getopts ',:d:g:x:',\my %o ; 
+use Term::ANSIColor qw[ :constants ] ; $Term::ANSIColor::AUTORESET = 1 ;
+use feature qw[ say ] ;
+
+$o{d} //= 1 ; # ディレトクリに対する処理を抑制するかどうか。0が明示的に与えられたら抑制。
+$o{g} //= 12 ; # 最近アクセスされたファイルを最大何個取り出すか
+#* stat = * lstat if $o{l} ;
+my $start_time = [ gettimeofday ]  ;
+main () ; exit 0 ;
+
+sub main { 
+	my $start_dir = $ARGV[0] // $o{x} // '.' ;
+	our @ Files = ()  ; # 
+	chdir $start_dir or die ; 
+
+	find ( { wanted => \& wanted , no_chdir => 1 } , "." ) ;
+
+	sub wanted {
+		my @s = stat $_ ;
+		my $atime = $s[8] ;
+		my $bytes = $s[7] ; 
+		push @ Files , ff->new ( $_ , $atime, $bytes ) if ! ( -d _ && do { $_.='/' ;1} ) || $o{d} ; 
+	}  
+
+	my $now = time ; 
+	for ( @Files ) { 
+		my $name =  $_ -> {name} ; 
+		#my @s = stat $name ; 
+		my $bytes = $_ ->{bytes} ; # $s[7] ;
+		my $elapsed = $now -  $_->{atime} ; #$s[8] ;
+		#say "$ela\t$byte\t$name" ;
+		$_ ->{ bytes } = $bytes ; 
+		$_ ->{ elapsed } = $elapsed ;
+	}
+	@ Files = sort {  $a ->{elapsed} <=> $b->{elapsed} } @Files ; 
+	my $mrec0 = 0 ; # undef
+
+	say join "\t" , "Diff_seconds" , "Seconds_before" , "Byte_size" ,"File_name" ; 
+	#say "---" ;
+
+	for ( splice @Files , 0 , $o{g} ) { 
+		my @t ; 
+		my $mrec = sprintf "%0.6f" , $_->{elapsed} ;
+		push @t , sprintf "%0.6f" , "$mrec" - "$mrec0" ;
+		push @t , $mrec ; #sprintf "%0.6f" , $_->{elapsed} ;
+		push @t , $_->{bytes}, $_->{name} ; 
+		$t[2] =~ s/(?<=\d)(?=(\d\d\d)+($|\D))/,/g if $o{','} // '' ne "0" ; 
+		say join "\t" , @t ;
+		$mrec0 = $mrec ; 
+	}
+	my $num = @ Files ; 
+	my $elps = tv_interval ( $start_time , [gettimeofday] )  ; 
+	say STDERR CYAN "Files processed : $num ; Elapsed seconds : $elps" ;
+
+}
+
+
+sub HELP_MESSAGE { # <-- - サブコマンドが呼ばれているときはそのヘルプが呼ばれる。
+    local @ARGV = do { my ($x,@y) = 0 ; 1 while ( @y = caller $x++ )[ 0 ] eq "Getopt::Std" ; $y[1] } ;
+    Pod::Perldoc -> run ;
+}
+sub VERSION_MESSAGE { $ Getopt::Std::STANDARD_HELP_VERSION = 1 }  # <- here?
+
+
+package ff ;
+
+sub new ( $ ) { #say 1 ;
+	my $ins = { name => $_[1] , atime => $_[2] , bytes => $_[3] } ; 
+	return bless $ins ;
+} 
+
+=encoding utf8
+
+=head1 NAME
+
+ lastaccess DIRNAME 
+
+ DIRNAMEの下にあるファイルで、最後にアクセスされた順にファイルを表示する。
+
+ オプション: 
+   -d 0 ; 途中で現れるディレクトリに対する処理を抑制する。
+   -g N : 最大最近の何個を取り出すかの指定。未指定なら12。
+   -x STR : DIRNAME の指定
+   -, 0 : 3桁区切りのコンマを抑制する。
+
+
+=cut
