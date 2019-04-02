@@ -4,6 +4,7 @@ use File::Find ;
 use Time::HiRes qw[ stat tv_interval time gettimeofday ] ;
 use Getopt::Std ; getopts ',:d:g:x:',\my %o ; 
 use Term::ANSIColor qw[ :constants ] ; $Term::ANSIColor::AUTORESET = 1 ;
+use Pod::Perldoc ;
 use feature qw[ say ] ;
 
 $o{d} //= 1 ; # ディレトクリに対する処理を抑制するかどうか。0が明示的に与えられたら抑制。
