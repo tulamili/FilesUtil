@@ -14,11 +14,12 @@ my $start_time = [ gettimeofday ]  ;
 main () ; exit 0 ;
 
 sub main { 
-	my $start_dir = $ARGV[0] // $o{x} // '.' ;
+	my @sdir = defined $o{x} ? ($o{x}) : @ARGV ? @ARGV : qw[ . ] ; 
+	#my $start_dir = $ARGV[0] // $o{x} // '.' ;
 	our @ Files = ()  ; # 
-	chdir $start_dir or die ; 
+	#chdir $start_dir or die ; 
 
-	find ( { wanted => \& wanted , no_chdir => 1 } , "." ) ;
+	find ( { wanted => \& wanted , no_chdir => 1 } , @sdir 	 ) ;
 
 	sub wanted {
 		my @s = stat $_ ;
