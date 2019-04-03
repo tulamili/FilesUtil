@@ -1,0 +1,113 @@
+#!/usr/bin/perl
+use 5.014 ; use strict ; use warnings ; 
+use DirHandle ;
+use File::Find ; 
+use File::Spec::Functions qw[ splitdir ] ; 
+use List::Util qw[ first shuffle ] ;
+use Time::HiRes qw[ stat tv_interval time gettimeofday ] ;
+use Getopt::Std ; getopts '.:,:g:v:x:1:',\my %o ; 
+use Term::ANSIColor qw[ :constants ] ; $Term::ANSIColor::AUTORESET = 1 ;
+use Pod::Perldoc ;
+use feature qw[ say ] ;
+
+$o{'.'} //= 1 ; # ピリオドで始まる隠しファイルへの処理を抑制するか(辿らない+数えない)かどうか。
+$o{d} //= 1 ; # ディレトクリに対する処理を抑制するかどうか。0が明示的に与えられたら抑制。
+$o{g} //= 12 ; # 最近アクセスされたファイルを最大何個取り出すか
+$o{v} //= 3 ; # 具体例として表示するファイルの数
+$o{1} //= '' ;
+no warnings ; 
+#* shuffle = sub ( @ ) { @_ } if do { $o{1} //= '' ; $o{1} =~ /s/ } ; # -0 s が指定されたら シャッフルを無効化する。
+use warnings ;
+#* shuffle1 = * shuffle ;
+my $start_time = [ gettimeofday ]  ;
+main () ; exit 0 ;
+
+sub main { 
+  my @sdir = defined $o{x} ? ($o{x}) : @ARGV ? @ARGV : qw[ . ] ; 
+  our @Dirs = ()  ; # 
+
+  find ( { wanted => sub {} , postprocess => \&pp } , @sdir ) ; # preprocessは1回しか走らなかった。
+
+  sub pp {
+    return if $o{'.'} !~ /f/ && defined first { /^\./ } splitdir $File::Find::name ; # 隠しファイルを辿らない場合
+    #say FAINT GREEN join ", " , $File::Find::name , $_ ;
+    opendir my( $dh ), $_ or do { say STDERR YELLOW "Cannot open `$File::Find::name'." ; return } ; #
+    my @files =  map{ -d $_ ? "$_/" : $_ . FAINT do {my $b=-s ; "(${b})"} }  grep ! /^\.{1,2}$/, readdir $dh ; 
+    @files = grep ! m/^\./ , @files if $o{'.'} !~ /c/ ;
+    my $fnum  = @files ; # . と .. の2個は必ずあると考えた。
+    @files = shuffle @files if $o{v} && $o{1} =~ /s/ ;
+    my $fex =[sort splice @files, 0, $o{v}] ;  # 含まれているファイルの例を3個出す。
+    push @Dirs , ff->new ( "$File::Find::name/" , $fnum , $fex ) ;
+  }  
+
+  my $now = time ; 
+  @ Dirs = sort {  $b->{filenum} <=> $a->{filenum} } @Dirs ; 
+
+  #say join "\t" , "Diff_seconds" , "Seconds_before" , "Byte_size" ,"File_name" ; 
+  #say "---" ;
+  say join "\t" , "Files_attached", "Directory_name" , $o{v} ? "File_examples" . FAINT "(byte_size)": () ;
+
+  my $shown = 0 ; # 表示した個数
+  for ( splice @Dirs , 0 , $o{g} ) { 
+    my @t ; 
+    push @t , $_ -> { filenum } ; 
+    push @t , $_ -> { name } ;
+    push @t , @{ $_ -> { fex } }  ;
+    #$t[2] =~ s/(?<=\d)(?=(\d\d\d)+($|\D))/,/g if $o{','} // '' ne "0" ; 
+    say join "\t" , @t ;
+    $shown ++ ;
+  }
+  my $num = @ Dirs ; 
+
+  my $elps = sprintf "%.6f" , tv_interval $start_time ;
+  say STDERR CYAN "Directories processed : $num ; Shown above : $shown ; Elapsed seconds : $elps" ;
+
+}
+
+
+sub HELP_MESSAGE { # <-- - サブコマンドが呼ばれているときはそのヘルプが呼ばれる。
+    local @ARGV = do { my ($x,@y) = 0 ; 1 while ( @y = caller $x++ )[ 0 ] eq "Getopt::Std" ; $y[1] } ;
+    Pod::Perldoc -> run ;
+}
+sub VERSION_MESSAGE { $ Getopt::Std::STANDARD_HELP_VERSION = 1 }  # <- here?
+
+
+package ff ;
+use Term::ANSIColor qw[ :constants ] ; $Term::ANSIColor::AUTORESET = 1 ;
+
+sub new ( $ ) { #say 1 ;
+  #say BRIGHT_BLUE @_ ; 
+  my $ins = { name => $_[1] , filenum => $_[2] , fex => $_[3] } ; #, bytes => $_[3] } ; 
+  return bless $ins ;
+} 
+
+=encoding utf8
+
+=head1 NAME
+
+  dirheavy DIRNAME 
+
+ DIRNAMEの下にあるディレクトリで、その直下のファイル数が多い順に表示する。
+ lsコマンドが遅くなるようなディレクトリの探索のため。
+
+ オプション: 
+   -d 0 ; 途中で現れるディレクトリに対する処理を抑制する。
+   -g N : 最大最近の何個を取り出すかの指定。未指定なら12。
+   -v N : 各ディレクトリに具体例として示すファイルの(最大)数。未指定なら3。
+   -x STR : DIRNAME の指定
+   -, 0 : 3桁区切りのコンマを抑制する。
+
+   -. c : 隠しファイルを数える。
+   -. f : 隠しファイルのディレクトリをたどる。
+   -. cf または fc : 隠しファイルのディレクトリをたどるし、隠しファイルの個数も数える。
+
+   -1 s : ファイルの具体例を表示するのに、シャッフルを無効化する。
+
+  開発メモ : 
+    * ソートを行っているので、数十万個を超えるファイルがその下の階層のどこかにある場合は計算リソースが気になる。工夫が必要。
+    * 各ファイルのパスの文字列をそのままメモリ上に載せているので、パス名ではないただのファイル名で十分なはずを、何倍も無駄をしている。改良したい。
+
+    * shuffleを使ったので、それが必要無い場合算出に無駄な時間が発生している。オプションで抑制したい。
+    * ファイル数で無くて、ファイルサイズの合計で見ることもしたい。
+
+=cut
