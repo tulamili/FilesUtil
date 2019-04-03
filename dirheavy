@@ -48,6 +48,7 @@ sub main {
   say join "\t" , "Files_attached", "Directory_name" , $o{v} ? "File_examples" . FAINT "(byte_size)": () ;
 
   my $shown = 0 ; # 表示した個数
+  my $num = @ Dirs ; 
   for ( splice @Dirs , 0 , $o{g} ) { 
     my @t ; 
     push @t , $_ -> { filenum } ; 
@@ -57,7 +58,7 @@ sub main {
     say join "\t" , @t ;
     $shown ++ ;
   }
-  my $num = @ Dirs ; 
+  
 
   my $elps = sprintf "%.6f" , tv_interval $start_time ;
   say STDERR CYAN "Directories processed : $num ; Shown above : $shown ; Elapsed seconds : $elps" ;
