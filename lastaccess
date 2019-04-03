@@ -29,7 +29,7 @@ sub main {
     $_ ->{ elapsed } = $now -  $_->{atime} for  @Files  ; 
 	@ Files = sort {  $a ->{elapsed} <=> $b->{elapsed} } @Files ; 
 
-	say join "\t" , "Diff_seconds" , "Seconds_before" , "Byte_size" ,"File_name" ; 
+	say join "\t", "Diff_seconds", "Seconds_before", "Byte_size", "File_name" ; 
 	my $mrec0 = 0 ; 
 	for ( splice @Files , 0 , $o{g} ) { 
 		my @t ; 
@@ -42,7 +42,7 @@ sub main {
 		$mrec0 = $mrec ; 
 	}
 	my $num = @ Files ; 
-	my $elps = sprintf "%.6f" , tv_interval ( $start_time ) ; #, [gettimeofday] )  ; 
+	my $elps = sprintf "%.6f" , tv_interval $start_time ; 
 	say STDERR CYAN "Files processed : $num ; Elapsed seconds : $elps" ;
 }
 
