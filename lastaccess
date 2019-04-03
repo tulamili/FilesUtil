@@ -31,6 +31,7 @@ sub main {
 
 	say join "\t", "Diff_seconds", "Seconds_before", "Byte_size", "File_name" ; 
 	my $mrec0 = 0 ; 
+	my $shown = 0 ;
 	for ( splice @Files , 0 , $o{g} ) { 
 		my @t ; 
 		my $mrec = $_->{elapsed} ; 
@@ -39,11 +40,12 @@ sub main {
 		push @t , $_->{bytes}, $_->{name} ; 
 		$t[2] =~ s/(?<=\d)(?=(\d\d\d)+($|\D))/,/g if $o{','} // '' ne "0" ; 
 		say join "\t" , @t ;
+		$shown ++ ; 
 		$mrec0 = $mrec ; 
 	}
 	my $num = @ Files ; 
 	my $elps = sprintf "%.6f" , tv_interval $start_time ; 
-	say STDERR CYAN "Files processed : $num ; Elapsed seconds : $elps" ;
+	say STDERR CYAN "Files processed : $num ; Shown above : $shown ;  Elapsed seconds : $elps" ;
 }
 
 sub HELP_MESSAGE { # <-- - サブコマンドが呼ばれているときはそのヘルプが呼ばれる。
