@@ -42,7 +42,7 @@ sub main {
 		$mrec0 = $mrec ; 
 	}
 	my $num = @ Files ; 
-	my $elps = tv_interval ( $start_time , [gettimeofday] )  ; 
+	my $elps = sprintf "%.6f" , tv_interval ( $start_time , [gettimeofday] )  ; 
 	say STDERR CYAN "Files processed : $num ; Elapsed seconds : $elps" ;
 }
 
