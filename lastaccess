@@ -46,9 +46,9 @@ sub main {
 
 	for ( splice @Files , 0 , $o{g} ) { 
 		my @t ; 
-		my $mrec = sprintf "%0.6f" , $_->{elapsed} ;
-		push @t , sprintf "%0.6f" , "$mrec" - "$mrec0" ;
-		push @t , $mrec ; #sprintf "%0.6f" , $_->{elapsed} ;
+		my $mrec = $_->{elapsed} ; # sprintf "%0.2f" , 
+		push @t , sprintf "%0.6f" , $mrec - $mrec0 ;# sprintf "%0.6f" , "$mrec" - "$mrec0" ;
+		push @t , sprintf "%0.6f" , $mrec ; #sprintf "%0.6f" , $_->{elapsed} ;
 		push @t , $_->{bytes}, $_->{name} ; 
 		$t[2] =~ s/(?<=\d)(?=(\d\d\d)+($|\D))/,/g if $o{','} // '' ne "0" ; 
 		say join "\t" , @t ;
@@ -91,5 +91,6 @@ sub new ( $ ) { #say 1 ;
 
   開発メモ : 
     * ソートを行っているので、数十万個を超えるファイルがその下の階層のどこかにある場合は計算リソースが気になる。工夫が必要。
+    * 各ファイルのパスの文字列をそのままメモリ上に載せているので、パス名ではないただのファイル名で十分なはずを、何倍も無駄をしている。改良したい。
 
 =cut
