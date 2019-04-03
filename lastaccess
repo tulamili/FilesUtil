@@ -9,17 +9,14 @@ use feature qw[ say ] ;
 
 $o{d} //= 1 ; # ディレトクリに対する処理を抑制するかどうか。0が明示的に与えられたら抑制。
 $o{g} //= 12 ; # 最近アクセスされたファイルを最大何個取り出すか
-#* stat = * lstat if $o{l} ;
-my $start_time = [ gettimeofday ]  ;
+my $start_time = [ gettimeofday ] ;
 main () ; exit 0 ;
 
 sub main { 
 	my @sdir = defined $o{x} ? ($o{x}) : @ARGV ? @ARGV : qw[ . ] ; 
-	#my $start_dir = $ARGV[0] // $o{x} // '.' ;
-	our @ Files = ()  ; # 
-	#chdir $start_dir or die ; 
+	our @ Files = () ;  
 
-	find ( { wanted => \& wanted , no_chdir => 1 } , @sdir 	 ) ;
+	find ( { wanted => \& wanted , no_chdir => 1 } , @sdir ) ;
 
 	sub wanted {
 		my @s = stat $_ ;
@@ -29,26 +26,16 @@ sub main {
 	}  
 
 	my $now = time ; 
-	for ( @Files ) { 
-		my $name =  $_ -> {name} ; 
-		#my @s = stat $name ; 
-		my $bytes = $_ ->{bytes} ; # $s[7] ;
-		my $elapsed = $now -  $_->{atime} ; #$s[8] ;
-		#say "$ela\t$byte\t$name" ;
-		$_ ->{ bytes } = $bytes ; 
-		$_ ->{ elapsed } = $elapsed ;
-	}
+    $_ ->{ elapsed } = $now -  $_->{atime} for  @Files  ; 
 	@ Files = sort {  $a ->{elapsed} <=> $b->{elapsed} } @Files ; 
-	my $mrec0 = 0 ; # undef
 
 	say join "\t" , "Diff_seconds" , "Seconds_before" , "Byte_size" ,"File_name" ; 
-	#say "---" ;
-
+	my $mrec0 = 0 ; 
 	for ( splice @Files , 0 , $o{g} ) { 
 		my @t ; 
-		my $mrec = $_->{elapsed} ; # sprintf "%0.2f" , 
-		push @t , sprintf "%0.6f" , $mrec - $mrec0 ;# sprintf "%0.6f" , "$mrec" - "$mrec0" ;
-		push @t , sprintf "%0.6f" , $mrec ; #sprintf "%0.6f" , $_->{elapsed} ;
+		my $mrec = $_->{elapsed} ; 
+		push @t , sprintf "%0.6f" , $mrec - $mrec0 ;
+		push @t , sprintf "%0.6f" , $mrec ; 
 		push @t , $_->{bytes}, $_->{name} ; 
 		$t[2] =~ s/(?<=\d)(?=(\d\d\d)+($|\D))/,/g if $o{','} // '' ne "0" ; 
 		say join "\t" , @t ;
@@ -57,9 +44,7 @@ sub main {
 	my $num = @ Files ; 
 	my $elps = tv_interval ( $start_time , [gettimeofday] )  ; 
 	say STDERR CYAN "Files processed : $num ; Elapsed seconds : $elps" ;
-
 }
-
 
 sub HELP_MESSAGE { # <-- - サブコマンドが呼ばれているときはそのヘルプが呼ばれる。
     local @ARGV = do { my ($x,@y) = 0 ; 1 while ( @y = caller $x++ )[ 0 ] eq "Getopt::Std" ; $y[1] } ;
