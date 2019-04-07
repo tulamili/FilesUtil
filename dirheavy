@@ -2,7 +2,7 @@
 use 5.014 ; use strict ; use warnings ; 
 use DirHandle ;
 use File::Find ; 
-use File::Spec::Functions qw[ splitdir ] ; 
+use File::Spec::Functions qw[ splitdir catdir ] ; 
 use List::Util qw[ first shuffle ] ;
 use Time::HiRes qw[ stat tv_interval time gettimeofday ] ;
 use Getopt::Std ; getopts '.:,:g:v:x:1:',\my %o ; 
@@ -15,29 +15,27 @@ $o{d} //= 1 ; # ディレトクリに対する処理を抑制するかどうか�
 $o{g} //= 12 ; # 最近アクセスされたファイルを最大何個取り出すか
 $o{v} //= 3 ; # 具体例として表示するファイルの数
 $o{1} //= '' ;
-no warnings ; 
-#* shuffle = sub ( @ ) { @_ } if do { $o{1} //= '' ; $o{1} =~ /s/ } ; # -0 s が指定されたら シャッフルを無効化する。
-use warnings ;
-#* shuffle1 = * shuffle ;
+
 my $start_time = [ gettimeofday ]  ;
 main () ; exit 0 ;
 
 sub main { 
-  my @sdir = defined $o{x} ? ($o{x}) : @ARGV ? @ARGV : qw[ . ] ; 
   our @Dirs = ()  ; # 
+  my @sdir = defined $o{x} ? ($o{x}) : @ARGV ? @ARGV : qw[ . ] ; 
+  my $I = catdir q[] , q[] ; # ファイルの区切り文字
 
   find ( { wanted => sub {} , postprocess => \&pp } , @sdir ) ; # preprocessは1回しか走らなかった。
 
   sub pp {
-    return if $o{'.'} !~ /f/ && defined first { /^\./ } splitdir $File::Find::name ; # 隠しファイルを辿らない場合
+    return if $o{'.'} !~ /f/ && defined first { /^\../ } splitdir $File::Find::name ; # 隠しファイルを辿らない場合
     #say FAINT GREEN join ", " , $File::Find::name , $_ ;
     opendir my( $dh ), $_ or do { say STDERR YELLOW "Cannot open `$File::Find::name'." ; return } ; #
-    my @files =  map{ -d $_ ? "$_/" : $_ . FAINT do {my $b=-s ; "(${b})"} }  grep ! /^\.{1,2}$/, readdir $dh ; 
+    my @files =  map{ -d $_ ? "$_$I" : $_ . FAINT do {my $b=-s ; "(${b})"} }  grep ! /^\.{1,2}$/, readdir $dh ; 
     @files = grep ! m/^\./ , @files if $o{'.'} !~ /c/ ;
     my $fnum  = @files ; # . と .. の2個は必ずあると考えた。
     @files = shuffle @files if $o{v} && $o{1} =~ /s/ ;
     my $fex =[sort splice @files, 0, $o{v}] ;  # 含まれているファイルの例を3個出す。
-    push @Dirs , ff->new ( "$File::Find::name/" , $fnum , $fex ) ;
+    push @Dirs , ff->new ( "$File::Find::name$I" , $fnum , $fex ) ;
   }  
 
   my $now = time ; 
@@ -58,13 +56,9 @@ sub main {
     say join "\t" , @t ;
     $shown ++ ;
   }
-  
-
   my $elps = sprintf "%.6f" , tv_interval $start_time ;
   say STDERR CYAN "Directories processed : $num ; Shown above : $shown ; Elapsed seconds : $elps" ;
-
 }
-
 
 sub HELP_MESSAGE { # <-- - サブコマンドが呼ばれているときはそのヘルプが呼ばれる。
     local @ARGV = do { my ($x,@y) = 0 ; 1 while ( @y = caller $x++ )[ 0 ] eq "Getopt::Std" ; $y[1] } ;
