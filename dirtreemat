@@ -1,0 +1,99 @@
+#!/usr/bin/perl 
+use 5.014 ; use strict ; use warnings  ;
+use feature qw [ say ] ;
+use Time::HiRes qw[gettimeofday tv_interval] ; 
+use Term::ANSIColor qw [ :constants color ] ; $Term::ANSIColor::AUTORESET = 1 ; 
+use File::Spec::Functions qw[ catfile splitdir rel2abs updir ] ; 
+use Getopt::Std ; 
+use List::Util qw [ sum sum0 reduce ] ;
+use Cwd qw [ getcwd abs_path ] ;
+
+my $time_start = [ gettimeofday ] ; 
+getopts '.:x:0:' , \my%o ; 
+#getopts '.:LSd:g:l:s:x:y:' , \my%o ; 
+push @ARGV , $o{x} if defined $o{x} ; # 引数がオプションで  与えられた場合の処理
+my $CntFile = 0 ; # 対象としたファイルの数
+my $I = catfile '' , '' ; # OS毎に異なる可能性のある、ファイルパスの区切り文字を取得。 
+my $start_dir = $ARGV [0] // "." ; # 先頭のディレクトリ 
+chdir $start_dir or die ;
+& main ; 
+exit 0 ;
+
+END{ print RESET "" } ;
+
+
+sub open_dir_error_message ( $ ) { 
+  say STDERR FAINT BOLD YELLOW "Cannot open the directory `$_[0]' so skipped." ;
+}
+
+
+# そのインスタンスの下のディレクトリファイルの一覧を文字列の配列で返す。
+sub get_dirs () { 
+  opendir my $dh , '.' or do { open_dir_error_message ( abs_path "." ) ; return () } ; 
+  my @dirs ;
+  @dirs = grep { ! /\A\.{1,2}\Z/ && -d $_ } readdir $dh ; 
+  @dirs = grep { ! /\A\./ } @dirs if exists $o{'.'} && $o{'.'} eq "0" ; # 隠しファイルに関する処理
+  closedir $dh ;
+  return @dirs ; 
+}
+
+sub main () {
+
+  our @S ; #　$S[depth][maxdepth]の集計表となる。
+
+  sub node_proc ( $ )  { 
+    # 第１引数は、元の指定ディレクトリからの深さであり、
+    # 返り値は、そこで経験した最大の深さである。
+    my $dep = $_[0] ; # 深さ
+    my $mdep = $dep ; # 最大深さの記録用。
+    my @dirs = get_dirs () ;
+    for ( @dirs ) { 
+      next unless chdir $_ ; 
+      $mdep = reduce { $a > $b ? $a : $b } $mdep , & node_proc ( $dep + 1 ) ; # <-- 再帰的な呼び出し
+      chdir '..' or die ; # ここで戻れないのは重大
+    }
+    $S [ $dep ] [ $mdep ] ++ ;
+    return $mdep ;
+  }
+
+  my $depth = 0 ; # 深さ
+  node_proc ( 0 ) ; 
+
+  say join "\t" , '', 0 .. $#S ;
+  for ( 0 .. $#S ) { 
+  	$S[$_][$_] //= 0 unless exists $o{0} && $o{0} eq "." ;
+    say join "\t" , $_ , map {$_ // "" } @{$S[$_]} ; 
+  }
+
+  say STDERR " --  " , REVERSE ITALIC " Process time: " , CLEAR " " , 
+     sprintf( "%.6f", tv_interval $time_start , [ gettimeofday ] ) , " second(s)." ;
+}
+
+## ヘルプの扱い
+sub VERSION_MESSAGE {}
+sub HELP_MESSAGE {
+    use FindBin qw[ $Script ] ; 
+    $ARGV[1] //= '' ;
+    open my $FH , '<' , $0 ;
+    while(<$FH>){
+        s/\$0/$Script/g ;
+        print $_ if s/^=head1// .. s/^=cut// and $ARGV[1] =~ /^o(p(t(i(o(ns?)?)?)?)?)?$/i ? m/^\s+\-/ : 1;
+    }
+    close $FH ;
+    exit 0 ;
+}
+
+=encoding utf8
+=head1
+
+　$0 [dirname]
+   
+   指定されたディレクトリから、i階層下に潜ったところに、
+   j階層下までディレクトリを持つディレクトリが何個あるのかを示す。
+   縦方向がiで、横方向がjに対応する。
+
+  オプション: 
+
+    -x dirname : 引数dirnameとして与えるディレクトリ名をオプションとして渡す。
+    -. 0 : 隠しファイルを辿らない。
+    -0 . : 対角成分の値がゼロの場合に空文字列とする。
