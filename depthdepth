@@ -5,69 +5,98 @@ use Time::HiRes qw[gettimeofday tv_interval] ;
 use Term::ANSIColor qw [ :constants color ] ; $Term::ANSIColor::AUTORESET = 1 ; 
 use File::Spec::Functions qw[ catfile splitdir rel2abs updir ] ; 
 use Getopt::Std ; 
-use List::Util qw [ sum sum0 reduce ] ;
+use List::Util qw [ max min sum sum0 reduce ] ;
 use Cwd qw [ getcwd abs_path ] ;
 
 my $time_start = [ gettimeofday ] ; 
-getopts '.:x:0:' , \my%o ; 
-#getopts '.:LSd:g:l:s:x:y:' , \my%o ; 
+getopts '.:g:x:0:' , \my%o ; 
 push @ARGV , $o{x} if defined $o{x} ; # 引数がオプションで  与えられた場合の処理
-my $CntFile = 0 ; # 対象としたファイルの数
-my $I = catfile '' , '' ; # OS毎に異なる可能性のある、ファイルパスの区切り文字を取得。 
 my $start_dir = $ARGV [0] // "." ; # 先頭のディレクトリ 
+my $d0 = getcwd ;
 chdir $start_dir or die ;
+my $I = catfile q[] , q[] ;
+sub head_trim ( $ ) { (my $t = $_[0]) =~ s/^\Q$d0$I\E// ; $t }
+
 & main ; 
 exit 0 ;
 
 END{ print RESET "" } ;
 
 
+
 sub open_dir_error_message ( $ ) { 
   say STDERR FAINT BOLD YELLOW "Cannot open the directory `$_[0]' so skipped." ;
 }
 
-
 # そのインスタンスの下のディレクトリファイルの一覧を文字列の配列で返す。
 sub get_dirs () { 
-  opendir my $dh , '.' or do { open_dir_error_message ( abs_path "." ) ; return () } ; 
   my @dirs ;
+  #return @dirs = grep { -d $_ } glob '*' ; 
+  opendir my $dh , '.' or do { open_dir_error_message ( abs_path "." ) ; return () } ; 
   @dirs = grep { ! /\A\.{1,2}\Z/ && -d $_ } readdir $dh ; 
   @dirs = grep { ! /\A\./ } @dirs if exists $o{'.'} && $o{'.'} eq "0" ; # 隠しファイルに関する処理
   closedir $dh ;
   return @dirs ; 
 }
 
+
 sub main () {
 
+  # コンマ区切り ハイフン結合ペアの取り出し
+  my @gg = do { ! exists $o{g} ? () : (my $t = $o{g}) =~ s/[xd]//gi ;  map { [ split /-/, $_ ] } split /,/ , $t // '' } ;
+  our %g1 = map { $_ ->[0] , 1 } grep { @ { $_ } == 1 } @gg ; # ペアではないもの
+  our %g2 = map { $_->[0] ."-" .$_->[1] , 1 } grep { @ { $_ } == 2 } @gg ; # ペアのもの
+
   our @S ; #　$S[depth][maxdepth]の集計表となる。
+  $SIG{INT} = sub { & output  } ;
+  & node_proc ( 0 ) ; 
+  & output () unless exists $o{g} && $o{g} =~ m/x/ ;
 
   sub node_proc ( $ )  { 
     # 第１引数は、元の指定ディレクトリからの深さであり、
     # 返り値は、そこで経験した最大の深さである。
     my $dep = $_[0] ; # 深さ
     my $mdep = $dep ; # 最大深さの記録用。
-    my @dirs = get_dirs () ;
+    my @dirs ; # = get_dirs () ;
+    opendir my $dh , '.' or do { open_dir_error_message ( abs_path "." ) ; return () } ; 
+    @dirs = sort grep { ! /\A\.{1,2}\Z/ && -d $_ && ! -l $_ } readdir $dh ;  # <-- - sort は -g が無いときは不要である
+    @dirs = grep { ! /\A\./ } @dirs if exists $o{'.'} && $o{'.'} eq "0" ; # 隠しファイルに関する処理
+    #closedir $dh ;
+
     for ( @dirs ) { 
+      #chdir $dh ;
       next unless chdir $_ ; 
-      $mdep = reduce { $a > $b ? $a : $b } $mdep , & node_proc ( $dep + 1 ) ; # <-- 再帰的な呼び出し
-      chdir '..' or die ; # ここで戻れないのは重大
+      #chdir $_ ;
+      $mdep = max $mdep , & node_proc ( $dep + 1 ) ; # <-- 再帰的な呼び出し
+      chdir $dh or die ; # ここで戻れないのは重大
     }
+    closedir $dh ;
     $S [ $dep ] [ $mdep ] ++ ;
+    say join "\t" , $o{g} =~ m/d/ ? () : ($dep), head_trim getcwd if $g1{$dep}  ; 
+    say join "\t" , $o{g} =~ m/d/ ? () : "$dep-$mdep", head_trim getcwd if exists $g2{"$dep-$mdep"} ; 
     return $mdep ;
   }
 
-  my $depth = 0 ; # 深さ
-  node_proc ( 0 ) ; 
 
-  say join "\t" , '', 0 .. $#S ;
+  sub output () { 
+  my $asum = 0 ; # ファイル数の合計
+  say join "\t" , '', 0 .. $#S , '+' , '++' ;
   for ( 0 .. $#S ) { 
-  	$S[$_][$_] //= 0 unless exists $o{0} && $o{0} eq "." ;
-    say join "\t" , $_ , map {$_ // "" } @{$S[$_]} ; 
-  }
+    $S[$_][$_] //= 0 ; # unless exists $o{0} && $o{0} eq "." ; # 対角成分に対する処理
+    for my $i ( $_ ..  $#S ) { $S[$_][$i] //= '' } ; 
+    my @out = ( $_ , map { ! defined $_ ? '' : $_ eq '' ? FAINT 0 : $_ } @{$S[$_]} ) ; 
+    push @out , FAINT my $rsum = sum0 map { $_ || 0 } @{$S[$_]}   ; 
+    push @out , $asum += $rsum ;
 
+    say join "\t" , @out ; 
+  }
+}
+END{
   say STDERR " --  " , REVERSE ITALIC " Process time: " , CLEAR " " , 
      sprintf( "%.6f", tv_interval $time_start , [ gettimeofday ] ) , " second(s)." ;
+   }
 }
+
 
 ## ヘルプの扱い
 sub VERSION_MESSAGE {}
@@ -91,9 +120,18 @@ sub HELP_MESSAGE {
    指定されたディレクトリから、i階層下に潜ったところに、
    j階層下までディレクトリを持つディレクトリが何個あるのかを示す。
    縦方向がiで、横方向がjに対応する。
+   シンボリックリンクは辿らない。
 
   オプション: 
 
     -x dirname : 引数dirnameとして与えるディレクトリ名をオプションとして渡す。
     -. 0 : 隠しファイルを辿らない。
-    -0 . : 対角成分の値がゼロの場合に空文字列とする。
+    -g N1-N2 ; iがN1, jがN2に相当するディレクトリ名を出力する。N1-N2の書式は コンマ(,)で連結が可能
+    -g ...[dx] ; xを指定文字列に含むことで表の出力を抑制する。dがある場合は深さ情報は抑制する。
+
+
+  その他の注意: 
+    - Ctrl+C では途中結果を出すのみで，停止しない。Ctrl+\で停止する。
+
+  開発上の注意 : 
+    * chdir ".." が意図通りに動作しないことがあったので、opendirを使った動作とした。
