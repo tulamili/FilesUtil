@@ -12,10 +12,14 @@ my $time_start = [ gettimeofday ] ;
 getopts '.:g:x:0:' , \my%o ; 
 push @ARGV , $o{x} if defined $o{x} ; # 引数がオプションで  与えられた場合の処理
 my $start_dir = $ARGV [0] // "." ; # 先頭のディレクトリ 
-my $d0 = getcwd ;
-chdir $start_dir or die ;
 my $I = catfile q[] , q[] ;
-sub head_trim ( $ ) { (my $t = $_[0]) =~ s/^\Q$d0$I\E// ; $t }
+my $d0 = ( getcwd ) . $I ;
+chdir $start_dir or die ;
+$d0 = (getcwd ). $I unless exists $o{g} && $o{g} =~ m/a/ ; 
+$d0 = '' if exists $o{g} && $o{g} =~ m/A/ ;
+say GREEN  getcwd ; 
+
+sub head_trim ( $ ) { (my $t = $_[0]) =~ s/^\Q$d0\E// ; $t }
 
 & main ; 
 exit 0 ;
@@ -43,7 +47,7 @@ sub get_dirs () {
 sub main () {
 
   # コンマ区切り ハイフン結合ペアの取り出し
-  my @gg = do { ! exists $o{g} ? () : (my $t = $o{g}) =~ s/[xd]//gi ;  map { [ split /-/, $_ ] } split /,/ , $t // '' } ;
+  my @gg = do { ! exists $o{g} ? () : (my $t = $o{g}) =~ s/[adx]//gi ;  map { [ split /-/, $_ ] } split /,/ , $t // '' } ;
   our %g1 = map { $_ ->[0] , 1 } grep { @ { $_ } == 1 } @gg ; # ペアではないもの
   our %g2 = map { $_->[0] ."-" .$_->[1] , 1 } grep { @ { $_ } == 2 } @gg ; # ペアのもの
 
@@ -72,8 +76,8 @@ sub main () {
     }
     closedir $dh ;
     $S [ $dep ] [ $mdep ] ++ ;
-    say join "\t" , $o{g} =~ m/d/ ? () : ($dep), head_trim getcwd if $g1{$dep}  ; 
-    say join "\t" , $o{g} =~ m/d/ ? () : "$dep-$mdep", head_trim getcwd if exists $g2{"$dep-$mdep"} ; 
+    say join "\t" , $o{g} =~ m/d/ ? () : $dep, head_trim getcwd if $g1{$dep}  ; 
+    say join "\t" , $o{g} =~ m/d/ ? () : "$dep-$mdep", head_trim getcwd if  $g2{"$dep-$mdep"} ; 
     return $mdep ;
   }
 
@@ -128,6 +132,7 @@ sub HELP_MESSAGE {
     -. 0 : 隠しファイルを辿らない。
     -g N1-N2 ; iがN1, jがN2に相当するディレクトリ名を出力する。N1-N2の書式は コンマ(,)で連結が可能
     -g ...[dx] ; xを指定文字列に含むことで表の出力を抑制する。dがある場合は深さ情報は抑制する。
+    -g ...[Aa] : aの有無でディレクトリの表示が変わる。あれば、指定ディレクトリ名から表示する。Aを含めば、絶対パスとなる。
 
 
   その他の注意: 
