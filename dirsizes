@@ -1,0 +1,156 @@
+#!/usr/bin/perl -t  
+
+##  入力文字列で指定された各ディレクトリの直下にあるファイルのサイズを
+##  取得するプログラム
+##
+##   2016/06/18 - 06/20  下野寿之 Shimono Toshiyuki developed in Tokyo, Japan.
+
+use 5.001 ; use strict ; use warnings ;
+use Getopt::Std ; getopts "fghi:npt:~ " , \my %o ; 
+use Cwd ;
+use File::Basename qw[ basename dirname ] ;
+use File::Spec::Functions ; 
+
+sub CoreCommon ($$) ; # ファイル名パスの前半と後半を受け取り、ファイルサイズを出力。
+sub fPath ( $$ ) ; # cwd が $_[0] であることを前提に、$_[1] がディレクトリであるなら、/ を末尾に付加。
+sub pOut ( $$ ) ; # 二個の変数の表示を -~ が指定されていれば、逆転表示
+sub initOpt ( )  ; # オプションなど処理をする。
+sub main ( ) ; 
+sub main1 ( ) ; # -f が無い場合
+sub main2 ( ) ; # -f がコマンド引数にある場合の処理
+sub hhmmss ( ) ; # 現在の時刻を hh:mm:ss の形式で返す。 
+
+my $dir0 = getcwd ;
+initOpt () ;
+main ; 
+exit 0 ;
+
+sub initOpt ( ) { 
+  $o{h} //= '' ; 
+  $o{t} //= '' ; 
+  $/ = ' '  if $o{' '} ; 
+
+  if ( ! $o{i} ) { 
+    pipe *STDIN , my $WH ; 
+    @ARGV = ( '.' ) if ! @ARGV ; 
+    print {$WH} join "\n" , splice @ARGV , 0 ; 
+    close $WH ; 
+  } 
+}
+
+sub main ( ) { 
+  main1 unless $o{f} ; 
+  main2 if $o{f} ; 
+}
+    
+sub main1 ( ) { 
+  while ( <> ) {
+    chomp ; do{ local $/ = "\n" ; chomp } ; 
+    $_ = $o{h} . $_ . $o{t} ;
+    next unless -d $_ ;
+    no warnings ; chdir $_ ; use warnings ; 
+    my @files = <*> ; 
+    my $n = 0 ;
+    for my $fn ( @files ) {
+        next if ! $o{g} && -d $fn ;
+         #^ -f はうまくいかないことがあるので、 -d で真となるものを除外することとした。
+        pOut -s $fn  , fPath $_ , $fn unless $o{n} ;
+        $n ++ ; 
+    }
+    pOut $n , fPath $_ , '' if $o{n} ; 
+    no warnings ; chdir $dir0 ; use warnings ;  
+  }
+}
+
+sub main2 ( ) { 
+  while ( <> ) {
+    chomp ; do{ local $/="\n" ; chomp } ;  
+    $_ = $o{h} . $_ . $o{t} ;
+    my $dir = dirname $_ ; 
+    my $bas = basename $_ ; 
+    no warnings ; chdir $dir ; use warnings ; 
+    my $size = -s $bas ; 
+    pOut $size, fPath $dir,$bas ; 
+    no warnings ; chdir $dir0 ; use warnings ; 
+  }
+}
+
+# 第一変数がカレントディレクトリであることを前提に、第二変数がディレクトリであるかどうかでパス名を変える。
+sub fPath ( $$ ) { 
+  my $path = catfile $_[0] , $_[1] ; 
+  return -d $_[1] ? catfile $path , ''  : $path ;
+}
+
+# 二個の変数の表示を -~ が指定されていれば、逆転表示。
+sub pOut ( $$ ) {
+  print ! $o{'~'} ? "$_[0]\t$_[1]"  : "$_[1]\t$_[0]"  ;
+  print "\t" , hhmmss if $o{p} ;  
+  print "\n" ; 
+}
+
+sub hhmmss () { 
+  my @t = @{[localtime]} [2,1,0] ; 
+  return sprintf "%02d:%02d:%02d", @t; 
+}
+
+## ヘルプの扱い
+sub VERSION_MESSAGE {}
+sub HELP_MESSAGE {
+    use FindBin qw[ $Script ] ; 
+    $ARGV[1] //= '' ;
+    open my $FH , '<' , $0 ;
+    while(<$FH>){
+        s/\$0/$Script/g ;
+        print $_ if s/^=head1// .. s/^=cut// and $ARGV[1] =~ /^o(p(t(i(o(ns?)?)?)?)?)?$/i ? m/^\s+\-/ : 1;
+    }
+    close $FH ;
+    exit 0 ;
+}
+
+=encoding utf8
+
+=head1
+ $0 
+
+    引数または標準入力などから、
+    ディレクトリの一覧を読取り、
+    その下のファイルの情報を得る。
+
+使用例: 
+
+  $0 -g    # カレントディレクトリ(cwd)直下の全てのファイルのサイズを出力
+  $0       # cwd直下の全ての非ディレクトリのファイルのサイズを出力
+  $0 -n *  # cwd直下のディレクトリのそれぞれの下の、非ディレクトリファイルの個数 
+  $0 -ng * # cwd直下のディレクトリのそれぞれの下の、全ファイルの個数(空ディレクトリが分かる)
+  $0 -ng */*    # cwdの2階層直下のディレクリの、それぞれの下にあるファイル数を表示
+  $0 -f a b     # ファイルaとbのサイズ
+
+  $0 -ig file   # file内の各行をディレクトリ名とみなし、直下のファイルのサイズを出力
+  $0 -ig < file #  同上
+  $0 -i file    # file内の各行をディレクトリ名とみなし、直下の非ディレクトリファイルのサイズを出力
+  
+  上記で、サイズとは、ファイルサイズであり、ファイルが何バイトを含むかを表している。
+
+オプション: 
+  -f : 入力で与えられたファイル名はディレクトリと見なさず、その直下のファイルは見ない。
+  -g : ファイルがディレトクリであっても、それを出力したり、カウントしたりする。
+  -h str : 入力の各文字列に先頭に追加する文字列
+  -i : 受け付けるファイル名は、標準入力または、コマンド引数に書かれたファイル名の中身とする。
+  -n : 各ディレクトリの下のファイルの個数を出力
+  -p : 末尾に、データ取得時刻を表示する。
+  -t str : 入力の各文字列の末尾に追加する文字列
+  -~ : 出力において、ファイル名と測定値の順序を逆転する。
+  -\  : (\の後に必ず空白文字を(2個以上)挿入すること) ファイルリストの区切りを空白文字とする。
+
+  --help : この $0 のヘルプメッセージを出す。  perldoc -t $0 | cat でもほぼ同じ。
+  --help opt : オプションのみのヘルプを出す。opt以外でも options と先頭が1文字以上一致すれば良い。
+
+
+目的: 
+   (このプログラムをわざわざ作った目的)  
+  ファイルシステムや環境によっては、ファイルサイズを測定したい
+  そのファイルのディレクトリに移動しないと、それを測定できない
+  場合があったため。
+
+=cut
+
