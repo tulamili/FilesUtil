@@ -1,0 +1,59 @@
+#!/usr/bin/perl
+use 5.001 ; use strict ; use warnings ; 
+use Cwd ;
+use List::Util qw[ minstr maxstr min ] ; 
+use Getopt::Std ; getopts 'dfg:l' ,\my %o ;
+
+$o{g} //= 3 ;
+
+sub seeAround ( ) ; 
+sub moveUp ( ) ;
+
+
+my $dir0 = getcwd ;
+my $len = length $dir0 ; 
+my $spl = ' ' x $len ; 
+do { 
+	my @x = @{ seeAround () } ; 
+	$x[0] = substr $x[0] . $spl , 0 , $len ; 
+	#	$x[0] .= "." ;
+	print join ( "\t" , @x  ) , "\n" ;
+	#print getcwd, "\n" ;
+}
+while ( & moveUp ) ;
+
+sub seeAround ( ) { 
+	my $dir = getcwd ; 
+	my @files = sort glob '*' ; 
+	@files = grep { -d } @files if $o{d} ;
+	@files = grep { -f } @files if $o{f} ;
+	@files = grep { -l } @files if $o{l} ; # symbolic link files
+	grep { $_ .= '/' if -d $_ } @files ;
+	my $fn = scalar @files ; 
+	my @files1 = splice @files , 0 , $o{g} ; 
+	my @files2 = splice @files , - min ( $o{g}, scalar @files ) , $o{g} ; 
+	#print "$dir\t$f1\t$f2\n" ;
+	return [ $dir , $fn , ! @files2 ? "@files1" : ! @files ? "@files1 @files2" : "@files1 .. @files2" ] ; 
+}
+
+sub moveUp ( ) { 
+	my $dir0 = getcwd ;
+	my $status = chdir '..' ; 
+	my $dir1 = getcwd ; 
+	return undef if $dir0 eq $dir1 ; 
+	return $dir1 ;
+}
+
+__END__
+
+ -g N ; 何個とりだすか
+
+ -d   : only directory files 
+ -f   ; only plain files
+ -l   ; only symbolic link files 
+
+ 開発メモ : 
+  * パス名全部は画面を広く取るので、最後のディレクトリファイル名のみを出力するようにしたい。
+  *   もしくは ./file1  ../file2 ../../file3 などとしたい。
+  * 出力の順序を逆順に出せるようにしたい。
+  * ファイルに空白が含まれていた場合にシングルクォーテーションで囲むかバックスラッシュでエスケープしたい。			
