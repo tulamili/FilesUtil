@@ -1,0 +1,111 @@
+#!/usr/bin/perl
+use 5.014 ; use warnings ; 
+use Getopt::Std ; getopts '!h:t:lrs:u', \my%o  ; 
+use Scalar::Util qw[ looks_like_number ] ; 
+$| = 1 if $o{'!'} ;
+eval { binmode *STDIN , ':utf8' ; binmode *STDOUT , ':utf8' } if $o{u} ;
+$o{h} //= '' ;
+$o{t} //= '' ;
+$/ = "\r\n" if $o{r} ; # -r の指定がある場合。
+
+if ( $o{s} ){ 
+  pipe my $RP1, my $WP1 ; 
+  if ( fork ) {
+    close $WP1 ; 
+    binmode $RP1 , ':utf8' if $o{u} ;
+    while ( <$RP1> ) { 
+      s/$o{s}//g ;
+      print ;
+    }
+    exit ; 
+  }
+  else {
+    close $RP1 ;
+    select $WP1 ; 
+    binmode $WP1 , ':utf8' if $o{u} ;
+  }
+}
+
+pipe my $RP2 , my $WP2 ;
+if ( fork ) { 
+  close $RP2 ; 
+  binmode $WP2, ':utf8' if $o{u} ;
+  print {$WP2} $_ while <> ;
+  exit ;
+} 
+
+close $WP2 ;
+binmode $RP2 , ':utf8' if $o{u} ;
+& main () ; 
+exit ; 
+
+sub main () { 
+
+  # 先頭部分の処理
+  do { local $/ = \$o{h}; my $t = <$RP2> } if looks_like_number $o{h} && $o{h} > 0 ; 
+  do { for(my $c=0; $c++ < $o{h}; defined($_=<$RP2>)and$_=1 ) {} } if $o{h} =~ s/l$//i && looks_like_number $o{h} ; 
+
+  #print $_ while <> ;
+  # 末尾をどうするか
+  my $tspec = $o{t} ; # -T で指定(specifed)された値 という意味を込めた。
+
+  # ?行を削除したい場合:   
+  if ($tspec =~ s/l$//i && looks_like_number $tspec) {
+    my @lines = () ; 
+    while ( <$RP2> ) { last if push (@lines , $_) >= $tspec } 
+    while ( <$RP2> ) { push @lines, $_ ; print shift @lines } 
+    return ; 
+  } 
+  # ?バイトを削除したい場合: 
+  if ( looks_like_number $tspec && $tspec > 0 ) { 
+    my $tmplen = 32768 ; 
+    local $/ = \$tmplen ; 
+    my $blocks = 1 + int $tspec / $tmplen ;
+    my @lines = () ;   
+    while ( <$RP2> ) { last if push (@lines , $_) >= $tspec } 
+    while ( <$RP2> ) { push @lines, $_ ; print shift @lines } 
+    print substr join ('', @lines) , 0 , -$tspec ;
+    return ;
+  }
+
+  # 何の指定もない場合:
+  print $_ while <$RP2> ; 
+  return ; 
+}
+
+## ヘルプの扱い
+sub VERSION_MESSAGE {}
+sub HELP_MESSAGE {
+  use FindBin qw[ $Script ] ; 
+  $ARGV[1] //= '' ;
+  open my $FH , '<' , $0 ;
+  while(<$FH>){
+    s/\$0/$Script/g ;
+    print $_ if s/^=head1// .. s/^=cut// and $ARGV[1] =~ /^o(p(t(i(o(ns?)?)?)?)?)?$/i ? m/^\s+\-/ : 1;
+  }
+  close $FH ;
+  exit 0 ;
+}
+
+=encoding utf8
+
+=head1
+
+コマンド
+
+  $0 
+
+オプションに関して: 
+ 
+   -h ? : 最初の?バイトを削除する。?がlまたはLで終わる場合は、?の行数だけ削除する。
+   -t ? : 最後の?バイトを削除する。?がlまたはLで終わる場合は、?の行数だけ削除する。
+   -r   : 改行文字コードを "\n" ではなくて、"\n\r" と指定する。
+   -s ? : 正規表現で与えられた ? を除去する。 "\r" も指定可能。 
+   -u  : 入力を utf-8 として扱う。
+   -!   : 出力をバッファリングしない。
+
+開発メモ: 
+   * ファイルに書き出した場合に、正しく書き出したことを確認する手段が欲しい。   
+   * 現状、複数のファイルが与えられても連結された1個のファイル化のように処理してしまう。もっと良い方法は?
+
+=cut
