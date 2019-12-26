@@ -1,76 +1,135 @@
 #!/usr/bin/perl
-use 5.014 ; use warnings ; 
-use Getopt::Std ; getopts '!h:t:lrs:u', \my%o  ; 
+use 5.018 ; use warnings ; 
+use Getopt::Std ; getopts '!1h:t:lrs:u', \my%o  ; 
 use Scalar::Util qw[ looks_like_number ] ; 
+use Encode qw [ encode_utf8 decode_utf8 ] ;
+use Term::ANSIColor qw [ :constants ] ; $Term::ANSIColor::AUTORESET = 1 ;
+#use POSIX ":sys_wait_h" ; 
+use IO::Handle ; 
+use Time::HiRes qw [ usleep ] ;
+#say STDERR BRIGHT_GREEN "@ARGV" ;
+
 $| = 1 if $o{'!'} ;
-eval { binmode *STDIN , ':utf8' ; binmode *STDOUT , ':utf8' } if $o{u} ;
+$/ = "\r\n" if $o{r} ; # -r の指定がある場合。
 $o{h} //= '' ;
 $o{t} //= '' ;
-$/ = "\r\n" if $o{r} ; # -r の指定がある場合。
 
-if ( $o{s} ){ 
-  pipe my $RP1, my $WP1 ; 
-  if ( fork ) {
-    close $WP1 ; 
-    binmode $RP1 , ':utf8' if $o{u} ;
-    while ( <$RP1> ) { 
-      s/$o{s}//g ;
-      print ;
+if ( $o{u} ) { 
+  #binmode *STDIN , ':utf8' ; 
+  binmode *STDOUT , ':utf8' ;
+  $o{s} = decode_utf8 $o{s} if defined $o{s} ;
+}
+
+my ( $R0a, $W0a, $R0, $W0, $R1, $W1, $R2, $W2 ) ; # 後でパイプとして使われる。
+
+if ( $o{1} ){ 
+	$R0 = *STDIN ;
+    & proc4utf8 ;
+    & proc4regexdel ; 
+    & mainproc () ; 
+    exit ;
+}
+& proc4files ;
+exit ; 
+
+
+# 複数のファイルでも対応できるようにする。
+
+sub proc4files { 
+  my $start = 1 ; # 本当に必要なのだろうか??
+  while ( 1 ) { 
+    pipe $R0, $W0 ;
+    pipe $R0a, $W0a ;
+    if ( fork ) { # この文のifをunlessに替えると端末に余計な空行が出力される。(Why?)
+      close $R0 ; close $R0a ;
+      if ($start && eof () ) { say {$W0a} "End" ; exit } else { say {$W0a} "Go" }
+      $W0a -> flush () ; # <--- -
+      while ( <> ){ 
+        $start = 1 ;
+        print  {$W0} $_ ;
+        last if eof ; # exit if eof がうまくいかないことがあった。
+      }
+      #usleep 500000 ;
+      next ; # while( 1 ) の先頭へ。
     }
-    exit ; 
+    close $W0 ; close $W0a ;
+    my $s = <$R0a> ; 
+    unless ( $s =~ /End/ ){ 
+      & proc4utf8 ;
+      & proc4regexdel ; 
+      & mainproc () ; 
+    }
+    exit ; # 子プロセスのみ終わることに注意。
   }
-  else {
-    close $RP1 ;
-    select $WP1 ; 
-    binmode $WP1 , ':utf8' if $o{u} ;
+  #exit 0 ;    
+}
+
+# 標準入力でもファイル入力でも、UTF-8の場合の処理の簡便化のために、プロセスを新たに作る。
+sub proc4utf8 {
+  pipe $R1, $W1 ;
+  # grep { binmode $_ , ':utf8' } $R0, $W1 if $o{u} ;
+  unless ( fork ) { 
+    close $R1 ; 
+    # local $/ =\1000 ;
+    print {$W1} $_ while <$R0> ;
+    exit ;
+  } 
+  close $W1 ;
+}
+
+# 特定の正規表現を除去するために、新たなプロセスを起動して処理をする。
+sub proc4regexdel { 
+  if ( $o{s} ){ 
+    pipe $R2, $W2 ; 
+    grep { binmode $_ , ':utf8' } $R2, $W2 if $o{u} ; # 正規表現による置換でUTF-8を使う時のための設定
+    unless ( fork ) {
+      close $W2 ; 
+      #local $/ = \1000 ;
+      while ( <$R2> ) { 
+        s/$o{s}//g ;
+        print STDOUT $_ ; # 個々は多分まちがいなく標準出力のみ。どこかでselectの設定を受けたりしていないはず?
+      }
+      0 && close $R2 ;  # <-- -- パイプは自動的に消えるように出来ているのか?
+      exit ; 
+    }
+    else {
+      close $R2 ;
+      select $W2 ; 
+    }
   }
 }
 
-pipe my $RP2 , my $WP2 ;
-if ( fork ) { 
-  close $RP2 ; 
-  binmode $WP2, ':utf8' if $o{u} ;
-  print {$WP2} $_ while <> ;
-  exit ;
-} 
+sub mainproc () { 
 
-close $WP2 ;
-binmode $RP2 , ':utf8' if $o{u} ;
-& main () ; 
-exit ; 
-
-sub main () { 
-
+  grep { binmode $_ , ':utf8' } $R1 if $o{u} ; # 読み取る時の文字数の定義のための設定である。
   # 先頭部分の処理
-  do { local $/ = \$o{h}; my $t = <$RP2> } if looks_like_number $o{h} && $o{h} > 0 ; 
-  do { for(my $c=0; $c++ < $o{h}; defined($_=<$RP2>)and$_=1 ) {} } if $o{h} =~ s/l$//i && looks_like_number $o{h} ; 
-
-  #print $_ while <> ;
-  # 末尾をどうするか
-  my $tspec = $o{t} ; # -T で指定(specifed)された値 という意味を込めた。
-
-  # ?行を削除したい場合:   
-  if ($tspec =~ s/l$//i && looks_like_number $tspec) {
-    my @lines = () ; 
-    while ( <$RP2> ) { last if push (@lines , $_) >= $tspec } 
-    while ( <$RP2> ) { push @lines, $_ ; print shift @lines } 
-    return ; 
-  } 
-  # ?バイトを削除したい場合: 
-  if ( looks_like_number $tspec && $tspec > 0 ) { 
-    my $tmplen = 32768 ; 
-    local $/ = \$tmplen ; 
-    my $blocks = 1 + int $tspec / $tmplen ;
-    my @lines = () ;   
-    while ( <$RP2> ) { last if push (@lines , $_) >= $tspec } 
-    while ( <$RP2> ) { push @lines, $_ ; print shift @lines } 
-    print substr join ('', @lines) , 0 , -$tspec ;
-    return ;
+  my $head = $o{h} ;
+  if ( looks_like_number $head && $head > 0 ) { #先頭の?行を削除したい場合   
+    local $/ = \$o{h}; my $t = <$R1> ;
+  }
+  elsif ( $head =~ s/l$//i && looks_like_number $head ) { #先頭の?文字を削除したい場合   
+    for ( my $c = 0 ; $c++ < $head ; ) { last unless defined <$R1> } 
   }
 
-  # 何の指定もない場合:
-  print $_ while <$RP2> ; 
-  return ; 
+  # 末尾の処理
+  my $tail = $o{t} ; # -T で指定(specifed)された値 という意味を込めた。
+  if ( $tail =~ s/l$//i && looks_like_number $tail && $tail > 0 ) { #末尾の?行を削除したい場合   
+    my @lines = () ; 
+    while ( <$R1> ) { last if $tail <= push @lines , $_ } 
+    while ( <$R1> ) { push @lines, $_ ; print shift @lines } 
+  } 
+  elsif ( looks_like_number $tail && $tail > 0 ) { #末尾の?文字を削除したい場合   
+    my $tmplen = 32768 ; # この数をいろいろ変えて実験はしたが、1でも1e5でも大した違いは無かった。
+    local $/ = \$tmplen ; 
+    my $blocks = 1 + int $tail / $tmplen ;
+    my @lines = () ;   
+    while ( <$R1> ) { last if $tail <= push @lines , $_ } 
+    while ( <$R1> ) { push @lines, $_ ; print shift @lines } 
+    print substr join ( '', @lines ) , 0 , - $tail ;
+  }
+  else { 
+    print $_ while <$R1> ; 
+  }
 }
 
 ## ヘルプの扱い
@@ -91,12 +150,13 @@ sub HELP_MESSAGE {
 
 =head1
 
-コマンド
+  partdel [-1] [-h ?] [-t ?] [-r] [-s ?] [-u] [-!]
 
-  $0 
+  入力の各ファイルの先頭または末尾を指定された行数/バイト数/UTF-8の文字数だけ除去して出力する。
+  複数のファイルを引数に与えた場合は、各ファイルに別々にその処理を施し、連結して出力する。(要反復的テスト)
 
-オプションに関して: 
- 
+オプション: 
+   -1 : 複数のファイルをひとつに連結した上で、処理をする。(-1を与えない場合は各ファイル別々に処理して、出力時に連結。)
    -h ? : 最初の?バイトを削除する。?がlまたはLで終わる場合は、?の行数だけ削除する。
    -t ? : 最後の?バイトを削除する。?がlまたはLで終わる場合は、?の行数だけ削除する。
    -r   : 改行文字コードを "\n" ではなくて、"\n\r" と指定する。
@@ -106,6 +166,5 @@ sub HELP_MESSAGE {
 
 開発メモ: 
    * ファイルに書き出した場合に、正しく書き出したことを確認する手段が欲しい。   
-   * 現状、複数のファイルが与えられても連結された1個のファイル化のように処理してしまう。もっと良い方法は?
 
 =cut
